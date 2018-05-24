@@ -25,6 +25,7 @@
 #include "host/ble_hs_adv.h"
 #include "host/ble_hs_hci.h"
 #include "ble_hs_priv.h"
+#include "console/console.h"
 
 #if MYNEWT
 #include "bsp/bsp.h"
@@ -1001,6 +1002,8 @@ ble_gap_conn_broken(uint16_t conn_handle, int reason)
     struct ble_gap_event event;
     int rc;
 
+
+
     memset(&event, 0, sizeof event);
     snap.desc = &event.disconnect.conn;
 
@@ -1034,6 +1037,7 @@ ble_gap_conn_broken(uint16_t conn_handle, int reason)
 
     event.type = BLE_GAP_EVENT_DISCONNECT;
     event.disconnect.reason = reason;
+    console_printf("Disconnect %d\n", reason);
     ble_gap_call_event_cb(&event, snap.cb, snap.cb_arg);
 
 #if MYNEWT_VAL(BLE_MESH)
