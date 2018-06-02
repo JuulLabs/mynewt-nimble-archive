@@ -39,6 +39,7 @@
 #endif
 
 static void ble_ll_hci_cmd_proc(struct os_event *ev);
+static int ble_ll_hci_vendor_cmd_proc(uint8_t *cmdbuf, uint16_t ocf, uint8_t *rsplen);
 
 /* OS event to enqueue command */
 static struct os_event g_ble_ll_hci_cmd_ev;
@@ -677,6 +678,100 @@ ble_ll_is_valid_adv_mode(uint8_t ocf)
 }
 #endif
 
+#define BLE_HCI_OCF_VENDOR_SET_TX_PWR       1
+#define BLE_HCI_OCF_VENDOR_GET_TX_PWR       2
+#define TXPWR_OPT                           9
+
+static int ble_ll_hci_vendor_set_txpwr(uint8_t *cmdbuf)
+{
+    static uint8_t txpwr_vals[TXPWR_OPT] = {0x04, 0x03, 0x00, 0xFC, 0xF8,
+                                            0xF4, 0xF0, 0xEC, 0xD8};
+    bool txpwr_ok = false
+    uint8_t txpwr_set = *cmdbuf;
+
+    for (i = 0; i < TXPWR_OPT; i++) {
+        if (txpwr_vals[i] == txpwr_set){
+            txpwr_ok = true;
+            break;
+        }
+    }
+
+    if (txpwr_ok) {
+        rc = ble_phy_txpwr_set((int)txpwr_set);
+    } else {
+        rc = BLE_ERR_INV_HCI_CMD_PARMS;
+    }
+
+    return (rc);
+}
+
+static int ble_ll_hci_vendor_get_txpwr(uint8_t *rspbuf, uint8_t *rsplen)
+{
+    rspbuf[0] = (uint8_t)ble_phy_txpwr_get();
+    *rsplen = 1;
+    return BLE_ERR_SUCCESS;
+}
+
+/* XXX: should this take a pointer back to app code bc vendor specific? 
+        leaving here for now to get functionality working; then should likely move 
+        alt would be to create ble_ll_vendor module and put this all in there*/ 
+/**
+ * Process a Vendor Specific command sent from the host to the controller. The HCI command
+ * has a 3 byte command header followed by data. The header is:
+ *  -> opcode (2 bytes)
+ *  -> Length of parameters (1 byte; does include command header bytes).
+ *
+ * @param cmdbuf Pointer to command buffer. Points to start of command header.
+ * @param ocf    Opcode command field.
+ * @param *rsplen Pointer to length of response
+ *
+ * @return int  This function returns a BLE error code. If a command status
+ *              event should be returned as opposed to command complete,
+ *              256 gets added to the return value.
+ */
+static int
+ble_ll_hci_vendor_cmd_proc(uint8_t *cmdbuf, uint16_t ocf, uint8_t *rsplen)
+{
+    int rc;
+    uint8_t cmdlen;
+    uint8_t len;
+    uint8_t *rspbuf;
+
+    /* Assume error; if all pass rc gets set to 0 */
+    rc = BLE_ERR_INV_HCI_CMD_PARMS;
+
+    /* Get cmd length to check matches expected */
+    len = cmdbuf[sizeof(uint16_t)];
+
+    /*
+     * The command response pointer points into the same buffer as the
+     * command data itself. That is fine, as each command reads all the data
+     * before crafting a response.
+     */
+    rspbuf = cmdbuf + BLE_HCI_EVENT_CMD_COMPLETE_MIN_LEN;
+
+    /* Move past HCI command header */
+    cmdbuf += BLE_HCI_CMD_HDR_LEN;
+
+    switch (ocf) {
+    case BLE_HCI_OCF_VENDOR_SET_TX_PWR:
+        if (len == 1) {
+            rc = ble_ll_hci_vendor_set_txpwr(cmdbuf);
+        }
+        break;
+    case BLE_HCI_OCF_VENDOR_GET_TX_PWR:
+        if (len == 0) {
+            rc = ble_ll_hci_vendor_get_txpwr(rspbuf, rsplen);
+        }
+        break;
+    default:
+        rc = BLE_ERR_UNKNOWN_HCI_CMD;
+        break;
+    }
+
+    return rc;
+}
+
 /**
  * Process a LE command sent from the host to the controller. The HCI command
  * has a 3 byte command header followed by data. The header is:
@@ -1196,6 +1291,9 @@ ble_ll_hci_cmd_proc(struct os_event *ev)
         break;
     case BLE_HCI_OGF_LE:
         rc = ble_ll_hci_le_cmd_proc(cmdbuf, ocf, &rsplen, &post_cb);
+        break;
+    case BLE_HCI_OGF_VENDOR:
+        rc = ble_ll_hci_vendor_cmd_proc(cmdbuf, ocf, &rsplen);
         break;
     default:
         /* XXX: Need to support other OGF. For now, return unsupported */
