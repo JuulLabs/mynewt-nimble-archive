@@ -38,8 +38,18 @@
 #include <ble_ll_dtm_priv.h>
 #endif
 
+/* XXX: TODO: create HCI Vendor module\? */
+#define BLE_HCI_OCF_VENDOR_SET_TX_PWR       1
+#define BLE_HCI_OCF_VENDOR_GET_TX_PWR       2
+#define TXPWR_OPT                           9
+
 static void ble_ll_hci_cmd_proc(struct os_event *ev);
+
+/* XXX: TODO: create HCI Vendor module\? */
 static int ble_ll_hci_vendor_cmd_proc(uint8_t *cmdbuf, uint16_t ocf, uint8_t *rsplen);
+static int ble_ll_hci_vendor_set_txpwr(uint8_t *cmdbuf);
+static int ble_ll_hci_vendor_get_txpwr(uint8_t *rspbuf, uint8_t *rsplen);
+
 
 /* OS event to enqueue command */
 static struct os_event g_ble_ll_hci_cmd_ev;
@@ -678,10 +688,7 @@ ble_ll_is_valid_adv_mode(uint8_t ocf)
 }
 #endif
 
-#define BLE_HCI_OCF_VENDOR_SET_TX_PWR       1
-#define BLE_HCI_OCF_VENDOR_GET_TX_PWR       2
-#define TXPWR_OPT                           9
-
+/* XXX: TODO: create HCI Vendor module\? */
 static int ble_ll_hci_vendor_set_txpwr(uint8_t *cmdbuf)
 {
     int rc;
@@ -706,6 +713,7 @@ static int ble_ll_hci_vendor_set_txpwr(uint8_t *cmdbuf)
     return (rc);
 }
 
+/* XXX: TODO: create HCI Vendor module\? */
 static int ble_ll_hci_vendor_get_txpwr(uint8_t *rspbuf, uint8_t *rsplen)
 {
     rspbuf[0] = (uint8_t)ble_phy_txpwr_get();
