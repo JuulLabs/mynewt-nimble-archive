@@ -684,12 +684,13 @@ ble_ll_is_valid_adv_mode(uint8_t ocf)
 
 static int ble_ll_hci_vendor_set_txpwr(uint8_t *cmdbuf)
 {
+    int rc;
     static uint8_t txpwr_vals[TXPWR_OPT] = {0x04, 0x03, 0x00, 0xFC, 0xF8,
                                             0xF4, 0xF0, 0xEC, 0xD8};
-    bool txpwr_ok = false
+    bool txpwr_ok = false;
     uint8_t txpwr_set = *cmdbuf;
 
-    for (i = 0; i < TXPWR_OPT; i++) {
+    for (int i = 0; i < TXPWR_OPT; i++) {
         if (txpwr_vals[i] == txpwr_set){
             txpwr_ok = true;
             break;
@@ -697,7 +698,7 @@ static int ble_ll_hci_vendor_set_txpwr(uint8_t *cmdbuf)
     }
 
     if (txpwr_ok) {
-        rc = ble_phy_txpwr_set((int)txpwr_set);
+        rc = ble_phy_txpwr_set((int8_t)txpwr_set);
     } else {
         rc = BLE_ERR_INV_HCI_CMD_PARMS;
     }
@@ -734,14 +735,14 @@ ble_ll_hci_vendor_cmd_proc(uint8_t *cmdbuf, uint16_t ocf, uint8_t *rsplen)
 {
     int rc;
     uint8_t cmdlen;
-    uint8_t len;
+    //uint8_t len;
     uint8_t *rspbuf;
 
     /* Assume error; if all pass rc gets set to 0 */
     rc = BLE_ERR_INV_HCI_CMD_PARMS;
 
     /* Get cmd length to check matches expected */
-    len = cmdbuf[sizeof(uint16_t)];
+    cmdlen = cmdbuf[sizeof(uint16_t)];
 
     /*
      * The command response pointer points into the same buffer as the
@@ -755,12 +756,12 @@ ble_ll_hci_vendor_cmd_proc(uint8_t *cmdbuf, uint16_t ocf, uint8_t *rsplen)
 
     switch (ocf) {
     case BLE_HCI_OCF_VENDOR_SET_TX_PWR:
-        if (len == 1) {
+        if (cmdlen == 1) {
             rc = ble_ll_hci_vendor_set_txpwr(cmdbuf);
         }
         break;
     case BLE_HCI_OCF_VENDOR_GET_TX_PWR:
-        if (len == 0) {
+        if (cmdlen == 0) {
             rc = ble_ll_hci_vendor_get_txpwr(rspbuf, rsplen);
         }
         break;
