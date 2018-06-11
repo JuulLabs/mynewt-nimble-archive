@@ -6,7 +6,7 @@
  * to you under the Apache License, Version 2.0 (the
  * "License"); you may not use this file except in compliance
  * with the License.  You may obtain a copy of the License at
- * 
+ *
  *  http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing,
@@ -237,7 +237,7 @@ ble_l2cap_rx_payload(struct ble_hs_conn *conn, struct ble_l2cap_chan *chan,
         /* More fragments remain. */
 #if MYNEWT_VAL(BLE_L2CAP_RX_FRAG_TIMEOUT) != 0
         conn->bhc_rx_timeout =
-            os_time_get() + MYNEWT_VAL(BLE_L2CAP_RX_FRAG_TIMEOUT);
+            ble_npl_time_get() + MYNEWT_VAL(BLE_L2CAP_RX_FRAG_TIMEOUT);
 
         ble_hs_timer_resched();
 #endif
@@ -382,7 +382,7 @@ err:
 /**
  * Transmits the L2CAP payload contained in the specified mbuf.  The supplied
  * mbuf is consumed, regardless of the outcome of the function call.
- * 
+ *
  * @param chan                  The L2CAP channel to transmit over.
  * @param txom                  The data to transmit.
  *

@@ -19,9 +19,34 @@
 
 #include "mesh/glue.h"
 #include "adv.h"
+#ifndef MYNEWT
+#include "nimble/nimble_port.h"
+#endif
+
 #define BT_DBG_ENABLED (MYNEWT_VAL(BLE_MESH_DEBUG))
 
+#if MYNEWT_VAL(BLE_EXT_ADV)
+#define BT_MESH_ADV_INST     (MYNEWT_VAL(BLE_MULTI_ADV_INSTANCES))
+
+#if MYNEWT_VAL(BLE_MESH_PROXY)
+/* Note that BLE_MULTI_ADV_INSTANCES contains number of additional instances.
+ * Instance 0 is always there
+ */
+#if MYNEWT_VAL(BLE_MULTI_ADV_INSTANCES) < 1
+#error "Mesh needs at least BLE_MULTI_ADV_INSTANCES set to 1"
+#endif
+#define BT_MESH_ADV_GATT_INST     (MYNEWT_VAL(BLE_MULTI_ADV_INSTANCES) - 1)
+#endif /* BLE_MESH_PROXY */
+#endif /* BLE_EXT_ADV */
+
 extern u8_t g_mesh_addr_type;
+
+#if MYNEWT_VAL(BLE_EXT_ADV)
+/* Store configuration for different bearers */
+#define BT_MESH_ADV_IDX          (0)
+#define BT_MESH_GATT_IDX         (1)
+static struct ble_gap_adv_params ble_adv_cur_conf[2];
+#endif
 
 const char *
 bt_hex(const void *buf, size_t len)
@@ -49,16 +74,16 @@ bt_hex(const void *buf, size_t len)
 }
 
 void
-net_buf_put(struct os_eventq *fifo, struct os_mbuf *om)
+net_buf_put(struct ble_npl_eventq *fifo, struct os_mbuf *om)
 {
-    struct os_event *ev;
+    struct ble_npl_event *ev;
 
     assert(OS_MBUF_IS_PKTHDR(om));
     ev = &BT_MESH_ADV(om)->ev;
     assert(ev);
-    assert(ev->ev_arg);
+    assert(ble_npl_event_get_arg(ev));
 
-    os_eventq_put(fifo, ev);
+    ble_npl_eventq_put(fifo, ev);
 }
 
 void *
@@ -281,17 +306,17 @@ net_buf_simple_add(struct os_mbuf *om, uint8_t len)
 }
 
 bool
-k_fifo_is_empty(struct os_eventq *q)
+k_fifo_is_empty(struct ble_npl_eventq *q)
 {
-    return STAILQ_EMPTY(&q->evq_list);
+    return ble_npl_eventq_is_empty(q);
 }
 
-void * net_buf_get(struct os_eventq *fifo, s32_t t)
+void * net_buf_get(struct ble_npl_eventq *fifo, s32_t t)
 {
-    struct os_event *ev = os_eventq_get_no_wait(fifo);
+    struct ble_npl_event *ev = ble_npl_eventq_get(fifo, 0);
 
     if (ev) {
-        return ev->ev_arg;
+        return ble_npl_event_get_arg(ev);
     }
 
     return NULL;
@@ -318,21 +343,29 @@ net_buf_reserve(struct os_mbuf *om, size_t reserve)
 }
 
 void
-k_work_init(struct os_callout *work, os_event_fn handler)
+k_work_init(struct ble_npl_callout *work, ble_npl_event_fn handler)
 {
-    os_callout_init(work, os_eventq_dflt_get(), handler, NULL);
+#ifndef MYNEWT
+    ble_npl_callout_init(work, nimble_port_get_dflt_eventq(), handler, NULL);
+#else
+    ble_npl_callout_init(work, ble_npl_eventq_dflt_get(), handler, NULL);
+#endif
 }
 
 void
-k_delayed_work_init(struct k_delayed_work *w, os_event_fn *f)
+k_delayed_work_init(struct k_delayed_work *w, ble_npl_event_fn *f)
 {
-    os_callout_init(&w->work, os_eventq_dflt_get(), f, NULL);
+#ifndef MYNEWT
+    ble_npl_callout_init(&w->work, nimble_port_get_dflt_eventq(), f, NULL);
+#else
+    ble_npl_callout_init(&w->work, ble_npl_eventq_dflt_get(), f, NULL);
+#endif
 }
 
 void
 k_delayed_work_cancel(struct k_delayed_work *w)
 {
-    os_callout_stop(&w->work);
+    ble_npl_callout_stop(&w->work);
 }
 
 void
@@ -340,49 +373,49 @@ k_delayed_work_submit(struct k_delayed_work *w, uint32_t ms)
 {
     uint32_t ticks;
 
-    if (os_time_ms_to_ticks(ms, &ticks) != 0) {
+    if (ble_npl_time_ms_to_ticks(ms, &ticks) != 0) {
         assert(0);
     }
-    os_callout_reset(&w->work, ticks);
+    ble_npl_callout_reset(&w->work, ticks);
 }
 
 void
-k_work_submit(struct os_callout *w)
+k_work_submit(struct ble_npl_callout *w)
 {
-    os_callout_reset(w, 0);
+    ble_npl_callout_reset(w, 0);
 }
 
 void
-k_work_add_arg(struct os_callout *w, void *arg)
+k_work_add_arg(struct ble_npl_callout *w, void *arg)
 {
-    w->c_ev.ev_arg = arg;
+    ble_npl_callout_set_arg(w, arg);
 }
 
 void
 k_delayed_work_add_arg(struct k_delayed_work *w, void *arg)
 {
-    w->work.c_ev.ev_arg = arg;
+    k_work_add_arg(&w->work, arg);
 }
 
 uint32_t
 k_delayed_work_remaining_get (struct k_delayed_work *w)
 {
     int sr;
-    os_time_t t;
+    ble_npl_time_t t;
 
     OS_ENTER_CRITICAL(sr);
 
-    t = os_callout_remaining_ticks(&w->work, os_time_get());
+    t = ble_npl_callout_remaining_ticks(&w->work, ble_npl_time_get());
 
     OS_EXIT_CRITICAL(sr);
 
-    return os_time_ticks_to_ms32(t);
+    return ble_npl_time_ticks_to_ms32(t);
 }
 
 int64_t k_uptime_get(void)
 {
     /* We should return ms */
-    return os_get_uptime_usec() / 1000;
+    return ble_npl_time_ticks_to_ms32(ble_npl_time_get());
 }
 
 u32_t k_uptime_get_32(void)
@@ -394,9 +427,9 @@ void k_sleep(int32_t duration)
 {
     uint32_t ticks;
 
-    ticks = os_time_ms_to_ticks32(duration);
+    ticks = ble_npl_time_ms_to_ticks32(duration);
 
-    os_time_delay(ticks);
+    ble_npl_time_delay(ticks);
 }
 
 static uint8_t pub[64];
@@ -471,16 +504,181 @@ set_ad(const struct bt_data *ad, size_t ad_len, u8_t *buf, u8_t *buf_len)
     return 0;
 }
 
+#if MYNEWT_VAL(BLE_EXT_ADV)
+static void
+ble_adv_copy_to_ext_param(struct ble_gap_ext_adv_params *ext_param,
+                          const struct ble_gap_adv_params *param)
+{
+    memset(ext_param, 0, sizeof(*ext_param));
+
+    ext_param->legacy_pdu = 1;
+
+    if (param->conn_mode != BLE_GAP_CONN_MODE_NON) {
+        ext_param->connectable = 1;
+        ext_param->scannable = 1;
+    }
+
+    ext_param->itvl_max = param->itvl_max;
+    ext_param->itvl_min = param->itvl_min;
+    ext_param->channel_map = param->channel_map;
+    ext_param->high_duty_directed = param->high_duty_cycle;
+    ext_param->own_addr_type = g_mesh_addr_type;
+}
+
+static int
+ble_adv_conf_adv_instance(const struct ble_gap_adv_params *param, int *instance)
+{
+    struct ble_gap_ext_adv_params ext_params;
+    struct ble_gap_adv_params *cur_conf;
+    int err = 0;
+
+    if (param->conn_mode == BLE_GAP_CONN_MODE_NON) {
+        *instance = BT_MESH_ADV_INST;
+        cur_conf = &ble_adv_cur_conf[BT_MESH_ADV_IDX];
+    } else {
+#if MYNEWT_VAL(BLE_MESH_PROXY)
+        *instance = BT_MESH_ADV_GATT_INST;
+        cur_conf = &ble_adv_cur_conf[BT_MESH_GATT_IDX];
+#else
+        assert(0);
+#endif
+    }
+
+    /* Checking interval max as it has to be in place if instance was configured
+     * before.
+     */
+    if (cur_conf->itvl_max == 0) {
+        goto configure;
+    }
+
+    if (memcmp(param, cur_conf, sizeof(*cur_conf)) == 0) {
+        /* Same parameters - skip reconfiguring */
+        goto done;
+    }
+
+    ble_gap_ext_adv_stop(*instance);
+    err = ble_gap_ext_adv_remove(*instance);
+    if (err) {
+        assert(0);
+        goto done;
+    }
+
+configure:
+    ble_adv_copy_to_ext_param(&ext_params, param);
+
+    err  = ble_gap_ext_adv_configure(*instance, &ext_params, 0,
+                                            ble_adv_gap_mesh_cb, NULL);
+    if (!err) {
+        memcpy(cur_conf, param, sizeof(*cur_conf));
+    }
+
+done:
+    return err;
+}
+
 int
 bt_le_adv_start(const struct ble_gap_adv_params *param,
                 const struct bt_data *ad, size_t ad_len,
                 const struct bt_data *sd, size_t sd_len)
 {
-#if MYNEWT_VAL(BLE_EXT_ADV)
-    uint8_t buf[MYNEWT_VAL(BLE_EXT_ADV_MAX_SIZE)];
-#else
+    struct os_mbuf *data;
+    int instance;
+    int err;
     uint8_t buf[BLE_HS_ADV_MAX_SZ];
+    uint8_t buf_len = 0;
+
+    err = ble_adv_conf_adv_instance(param, &instance);
+    if (err) {
+        return err;
+    }
+
+    if (ad_len > 0) {
+        err = set_ad(ad, ad_len, buf, &buf_len);
+        if (err) {
+            return err;
+        }
+
+        /* For now let's use msys pool. We are not putting more then legacy */
+        data = os_msys_get_pkthdr(BLE_HS_ADV_MAX_SZ, 0);
+        if (!data) {
+            return OS_ENOMEM;
+        }
+
+        err = os_mbuf_append(data, buf, buf_len);
+        if (err) {
+            goto error;
+        }
+
+        err = ble_gap_ext_adv_set_data(instance, data);
+        if (err) {
+            return err;
+        }
+
+        data = NULL;
+    }
+
+    if (sd_len > 0) {
+        buf_len = 0;
+
+        err = set_ad(sd, sd_len, buf, &buf_len);
+        if (err) {
+            return err;
+        }
+
+        /* For now let's use msys pool. We are not putting more then legace*/
+        data = os_msys_get_pkthdr(BLE_HS_ADV_MAX_SZ, 0);
+        if (!data) {
+            return OS_ENOMEM;
+        }
+
+        err = os_mbuf_append(data, buf, buf_len);
+        if (err) {
+            goto error;
+        }
+
+        err = ble_gap_ext_adv_rsp_set_data(instance, data);
+        if (err) {
+            goto error;
+        }
+    }
+
+    /*TODO: We could use duration and max events in the future */
+    err = ble_gap_ext_adv_start(instance, 0, 0);
+    return err;
+
+error:
+    if (data) {
+        os_mbuf_free_chain(data);
+    }
+
+    return err;
+}
+
+int bt_le_adv_stop(bool proxy)
+{
+#if MYNEWT_VAL(BLE_MESH_PROXY)
+    int rc;
+
+    if (proxy) {
+        rc = ble_gap_ext_adv_stop(BT_MESH_ADV_GATT_INST);
+    } else {
+        rc = ble_gap_ext_adv_stop(BT_MESH_ADV_INST);
+    }
+
+    return rc;
+#else
+    return ble_gap_ext_adv_stop(BT_MESH_ADV_INST);
 #endif
+}
+
+#else
+
+int
+bt_le_adv_start(const struct ble_gap_adv_params *param,
+                const struct bt_data *ad, size_t ad_len,
+                const struct bt_data *sd, size_t sd_len)
+{
+    uint8_t buf[BLE_HS_ADV_MAX_SZ];
     uint8_t buf_len = 0;
     int err;
 
@@ -519,6 +717,13 @@ bt_le_adv_start(const struct ble_gap_adv_params *param,
 
     return 0;
 }
+
+int bt_le_adv_stop(bool proxy)
+{
+	return ble_gap_adv_stop();
+}
+
+#endif
 
 #if MYNEWT_VAL(BLE_MESH_PROXY)
 int bt_mesh_proxy_svcs_register(void);

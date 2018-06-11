@@ -38,7 +38,7 @@
  * Used to limit the rate at which we send the number of completed packets
  * event to the host. This is the os time at which we can send an event.
  */
-static uint32_t g_ble_ll_last_num_comp_pkt_evt;
+static ble_npl_time_t g_ble_ll_last_num_comp_pkt_evt;
 extern uint8_t *g_ble_ll_conn_comp_ev;
 
 #if MYNEWT_VAL(BLE_LL_CFG_FEAT_LL_EXT_ADV)
@@ -136,7 +136,7 @@ ble_ll_conn_req_pdu_make(struct ble_ll_conn_sm *connsm, uint8_t chan)
     struct os_mbuf *m;
 
     m = ble_ll_scan_get_pdu();
-    assert(m != NULL);
+    BLE_LL_ASSERT(m != NULL);
 
     /* Construct first PDU header byte */
     pdu_type = BLE_ADV_PDU_TYPE_CONNECT_REQ;
@@ -223,7 +223,15 @@ ble_ll_conn_comp_event_send(struct ble_ll_conn_sm *connsm, uint8_t status,
                     memcpy(evdata, rpa, BLE_DEV_ADDR_LEN);
                 }
 
-                if (connsm->peer_addr_type > BLE_HCI_CONN_PEER_ADDR_RANDOM) {
+                /* We need to adjust peer type if device connected using RPA
+                 * and was resolved since RPA needs to be added to HCI event.
+                 */
+                 if (connsm->peer_addr_type < BLE_HCI_CONN_PEER_ADDR_PUBLIC_IDENT
+                         && (connsm->rpa_index > -1)) {
+                     peer_addr_type += 2;
+                 }
+
+                if (peer_addr_type > BLE_HCI_CONN_PEER_ADDR_RANDOM) {
                     if (connsm->conn_role == BLE_LL_CONN_ROLE_MASTER) {
                         rpa = ble_ll_scan_get_peer_rpa();
                     } else {
@@ -283,7 +291,7 @@ ble_ll_conn_num_comp_pkts_event_send(struct ble_ll_conn_sm *connsm)
      * have completed but there are data packets in the controller buffers
      * (i.e. enqueued in a connection state machine).
      */
-    if ((int32_t)(os_time_get() - g_ble_ll_last_num_comp_pkt_evt) <
+    if ((ble_npl_stime_t)(ble_npl_time_get() - g_ble_ll_last_num_comp_pkt_evt) <
                                             MYNEWT_VAL(BLE_NUM_COMP_PKT_RATE)) {
         /*
          * If this connection has completed packets, send an event right away.
@@ -358,7 +366,7 @@ skip_conn:
     }
 
     if (event_sent) {
-        g_ble_ll_last_num_comp_pkt_evt = os_time_get();
+        g_ble_ll_last_num_comp_pkt_evt = ble_npl_time_get();
     }
 }
 
@@ -1010,7 +1018,7 @@ done:
 static void
 ble_ll_conn_hci_cancel_conn_complete_event(void)
 {
-    assert(g_ble_ll_conn_comp_ev);
+    BLE_LL_ASSERT(g_ble_ll_conn_comp_ev);
 
     ble_ll_conn_comp_event_send(NULL, BLE_ERR_UNK_CONN_ID,
                                 g_ble_ll_conn_comp_ev, NULL);
@@ -1094,7 +1102,7 @@ ble_ll_conn_hci_disconnect_cmd(uint8_t *cmdbuf)
                     rc = BLE_ERR_CMD_DISALLOWED;
                 } else {
                     /* This control procedure better not be pending! */
-                    assert(CONN_F_TERMINATE_STARTED(connsm) == 0);
+                    BLE_LL_ASSERT(CONN_F_TERMINATE_STARTED(connsm) == 0);
 
                     /* Record the disconnect reason */
                     connsm->disconnect_reason = reason;
@@ -1464,7 +1472,7 @@ ble_ll_conn_hci_wr_auth_pyld_tmo(uint8_t *cmdbuf, uint8_t *rsp, uint8_t *rsplen)
         rc = BLE_ERR_INV_HCI_CMD_PARMS;
     } else {
         connsm->auth_pyld_tmo = tmo;
-        if (os_callout_queued(&connsm->auth_pyld_timer)) {
+        if (ble_npl_callout_is_active(&connsm->auth_pyld_timer)) {
             ble_ll_conn_auth_pyld_timer_start(connsm);
         }
     }

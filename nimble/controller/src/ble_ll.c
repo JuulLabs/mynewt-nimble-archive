@@ -32,6 +32,7 @@
 #include "nimble/ble_hci_trans.h"
 #include "controller/ble_hw.h"
 #include "controller/ble_phy.h"
+#include "controller/ble_phy_trace.h"
 #include "controller/ble_ll.h"
 #include "controller/ble_ll_adv.h"
 #include "controller/ble_ll_sched.h"
@@ -40,10 +41,11 @@
 #include "controller/ble_ll_whitelist.h"
 #include "controller/ble_ll_resolv.h"
 #include "controller/ble_ll_xcvr.h"
+#include "controller/ble_ll_trace.h"
 #include "ble_ll_conn_priv.h"
 
 #if MYNEWT_VAL(BLE_LL_DIRECT_TEST_MODE) == 1
-#include <ble_ll_dtm_priv.h>
+#include "ble_ll_dtm_priv.h"
 #endif
 
 /* XXX:
@@ -204,9 +206,9 @@ STATS_NAME_START(ble_ll_stats)
     STATS_NAME(ble_ll_stats, scan_timer_restarted)
 STATS_NAME_END(ble_ll_stats)
 
-static void ble_ll_event_rx_pkt(struct os_event *ev);
-static void ble_ll_event_tx_pkt(struct os_event *ev);
-static void ble_ll_event_dbuf_overflow(struct os_event *ev);
+static void ble_ll_event_rx_pkt(struct ble_npl_event *ev);
+static void ble_ll_event_tx_pkt(struct ble_npl_event *ev);
+static void ble_ll_event_dbuf_overflow(struct ble_npl_event *ev);
 
 #if MYNEWT
 
@@ -248,44 +250,6 @@ static const uint16_t g_ble_ll_pdu_header_tx_time[BLE_PHY_NUM_MODE] =
     [BLE_PHY_MODE_CODED_500KBPS] =
             (80 + 256 + 16 + 24 + 2 * (BLE_LL_PDU_HDR_LEN * 8 + 24 + 3)),
 };
-
-/* XXX: temporary logging until we transition to real logging */
-#ifdef BLE_LL_LOG
-struct ble_ll_log
-{
-    uint8_t log_id;
-    uint8_t log_a8;
-    uint16_t log_a16;
-    uint32_t log_a32;
-    uint32_t cputime;
-
-};
-
-#define BLE_LL_LOG_LEN  (256)
-
-static bssnz_t struct ble_ll_log g_ble_ll_log[BLE_LL_LOG_LEN];
-static uint8_t g_ble_ll_log_index;
-
-void
-ble_ll_log(uint8_t id, uint8_t arg8, uint16_t arg16, uint32_t arg32)
-{
-    os_sr_t sr;
-    struct ble_ll_log *le;
-
-    OS_ENTER_CRITICAL(sr);
-    le = &g_ble_ll_log[g_ble_ll_log_index];
-    le->cputime = os_cputime_get32();
-    le->log_id = id;
-    le->log_a8 = arg8;
-    le->log_a16 = arg16;
-    le->log_a32 = arg32;
-    ++g_ble_ll_log_index;
-    if (g_ble_ll_log_index == BLE_LL_LOG_LEN) {
-        g_ble_ll_log_index = 0;
-    }
-    OS_EXIT_CRITICAL(sr);
-}
-#endif
 
 /**
  * Counts the number of advertising PDU's received, by type. For advertising
@@ -578,8 +542,8 @@ ble_ll_wfr_timer_exp(void *arg)
     rx_start = ble_phy_rx_started();
     lls = g_ble_ll_data.ll_state;
 
-    ble_ll_log(BLE_LL_LOG_ID_WFR_EXP, lls, ble_phy_xcvr_state_get(),
-               (uint32_t)rx_start);
+    ble_ll_trace_u32x3(BLE_LL_TRACE_ID_WFR_EXP, lls, ble_phy_xcvr_state_get(),
+                       (uint32_t)rx_start);
 
     /* If we have started a reception, there is nothing to do here */
     if (!rx_start) {
@@ -797,7 +761,7 @@ ble_ll_rx_pdu_in(struct os_mbuf *rxpdu)
 
     pkthdr = OS_MBUF_PKTHDR(rxpdu);
     STAILQ_INSERT_TAIL(&g_ble_ll_data.ll_rx_pkt_q, pkthdr, omp_next);
-    os_eventq_put(&g_ble_ll_data.ll_evq, &g_ble_ll_data.ll_rx_pkt_ev);
+    ble_npl_eventq_put(&g_ble_ll_data.ll_evq, &g_ble_ll_data.ll_rx_pkt_ev);
 }
 
 /**
@@ -815,7 +779,7 @@ ble_ll_acl_data_in(struct os_mbuf *txpkt)
     OS_ENTER_CRITICAL(sr);
     STAILQ_INSERT_TAIL(&g_ble_ll_data.ll_tx_pkt_q, pkthdr, omp_next);
     OS_EXIT_CRITICAL(sr);
-    os_eventq_put(&g_ble_ll_data.ll_evq, &g_ble_ll_data.ll_tx_pkt_ev);
+    ble_npl_eventq_put(&g_ble_ll_data.ll_evq, &g_ble_ll_data.ll_tx_pkt_ev);
 }
 
 /**
@@ -828,7 +792,7 @@ ble_ll_acl_data_in(struct os_mbuf *txpkt)
 void
 ble_ll_data_buffer_overflow(void)
 {
-    os_eventq_put(&g_ble_ll_data.ll_evq, &g_ble_ll_data.ll_dbuf_overflow_ev);
+    ble_npl_eventq_put(&g_ble_ll_data.ll_evq, &g_ble_ll_data.ll_dbuf_overflow_ev);
 }
 
 /**
@@ -839,7 +803,7 @@ ble_ll_data_buffer_overflow(void)
 void
 ble_ll_hw_error(void)
 {
-    os_callout_reset(&g_ble_ll_data.ll_hw_err_timer, 0);
+    ble_npl_callout_reset(&g_ble_ll_data.ll_hw_err_timer, 0);
 }
 
 /**
@@ -848,7 +812,7 @@ ble_ll_hw_error(void)
  * @param arg
  */
 static void
-ble_ll_hw_err_timer_cb(struct os_event *ev)
+ble_ll_hw_err_timer_cb(struct ble_npl_event *ev)
 {
     if (ble_ll_hci_ev_hw_err(BLE_HW_ERR_HCI_SYNC_LOSS)) {
         /*
@@ -856,8 +820,8 @@ ble_ll_hw_err_timer_cb(struct os_event *ev)
          * event every 50 milliseconds (or each OS tick if a tick is longer
          * than 100 msecs).
          */
-        os_callout_reset(&g_ble_ll_data.ll_hw_err_timer,
-                         os_time_ms_to_ticks32(50));
+        ble_npl_callout_reset(&g_ble_ll_data.ll_hw_err_timer,
+                         ble_npl_time_ms_to_ticks32(50));
     }
 }
 
@@ -880,14 +844,14 @@ ble_ll_rx_start(uint8_t *rxbuf, uint8_t chan, struct ble_mbuf_hdr *rxhdr)
     int rc;
     uint8_t pdu_type;
 
-    ble_ll_log(BLE_LL_LOG_ID_RX_START, chan, rxhdr->rem_usecs,
-               rxhdr->beg_cputime);
-
     /* Advertising channel PDU */
     pdu_type = rxbuf[0] & BLE_ADV_PDU_HDR_TYPE_MASK;
 
+    ble_ll_trace_u32x2(BLE_LL_TRACE_ID_RX_START, g_ble_ll_data.ll_state,
+                       pdu_type);
+
     switch (g_ble_ll_data.ll_state) {
-        case BLE_LL_STATE_CONNECTION:
+    case BLE_LL_STATE_CONNECTION:
         rc = ble_ll_conn_rx_isr_start(rxhdr, ble_phy_access_addr_get());
         break;
     case BLE_LL_STATE_ADV:
@@ -940,9 +904,12 @@ ble_ll_rx_end(uint8_t *rxbuf, struct ble_mbuf_hdr *rxhdr)
     /* Get CRC status from BLE header */
     crcok = BLE_MBUF_HDR_CRC_OK(rxhdr);
 
-    ble_ll_log(BLE_LL_LOG_ID_RX_END, rxbuf[0],
-               ((uint16_t)rxhdr->rxinfo.flags << 8) | rxbuf[1],
-               rxhdr->beg_cputime);
+    /* Get advertising PDU type and length */
+    pdu_type = rxbuf[0] & BLE_ADV_PDU_HDR_TYPE_MASK;
+    len = rxbuf[1];
+
+    ble_ll_trace_u32x3(BLE_LL_TRACE_ID_RX_END, pdu_type, len,
+                       rxhdr->rxinfo.flags);
 
 #if MYNEWT_VAL(BLE_LL_DIRECT_TEST_MODE) == 1
     if (BLE_MBUF_HDR_RX_STATE(rxhdr) == BLE_LL_STATE_DTM) {
@@ -955,10 +922,6 @@ ble_ll_rx_end(uint8_t *rxbuf, struct ble_mbuf_hdr *rxhdr)
         rc = ble_ll_conn_rx_isr_end(rxbuf, rxhdr);
         return rc;
     }
-
-    /* Get advertising PDU type and length */
-    pdu_type = rxbuf[0] & BLE_ADV_PDU_HDR_TYPE_MASK;
-    len = rxbuf[1];
 
     /* If the CRC checks, make sure lengths check! */
     badpkt = 0;
@@ -1043,7 +1006,7 @@ ble_ll_tx_mbuf_pducb(uint8_t *dptr, void *pducb_arg, uint8_t *hdr_byte)
     struct ble_mbuf_hdr *ble_hdr;
 
     txpdu = pducb_arg;
-    assert(txpdu);
+    BLE_LL_ASSERT(txpdu);
     ble_hdr = BLE_MBUF_HDR_PTR(txpdu);
 
     os_mbuf_copydata(txpdu, ble_hdr->txinfo.offset, ble_hdr->txinfo.pyld_len,
@@ -1055,25 +1018,25 @@ ble_ll_tx_mbuf_pducb(uint8_t *dptr, void *pducb_arg, uint8_t *hdr_byte)
 }
 
 static void
-ble_ll_event_rx_pkt(struct os_event *ev)
+ble_ll_event_rx_pkt(struct ble_npl_event *ev)
 {
     ble_ll_rx_pkt_in();
 }
 
 static void
-ble_ll_event_tx_pkt(struct os_event *ev)
+ble_ll_event_tx_pkt(struct ble_npl_event *ev)
 {
     ble_ll_tx_pkt_in();
 }
 
 static void
-ble_ll_event_dbuf_overflow(struct os_event *ev)
+ble_ll_event_dbuf_overflow(struct ble_npl_event *ev)
 {
     ble_ll_hci_ev_databuf_overflow();
 }
 
 static void
-ble_ll_event_comp_pkts(struct os_event *ev)
+ble_ll_event_comp_pkts(struct ble_npl_event *ev)
 {
     ble_ll_conn_num_comp_pkts_event_send(NULL);
 }
@@ -1088,6 +1051,19 @@ ble_ll_event_comp_pkts(struct os_event *ev)
 void
 ble_ll_task(void *arg)
 {
+    struct ble_npl_event *ev;
+
+    /*
+     * XXX RIOT ties event queue to a thread which initialized it so we need to
+     * create event queue in LL task, not in general init function. This can
+     * lead to some races between host and LL so for now let us have it as a
+     * hack for RIOT where races can be avoided by proper initialization inside
+     * package.
+     */
+#ifdef RIOT_VERSION
+    ble_npl_eventq_init(&g_ble_ll_data.ll_evq);
+#endif
+
     /* Init ble phy */
     ble_phy_init();
 
@@ -1100,7 +1076,9 @@ ble_ll_task(void *arg)
     ble_ll_rand_start();
 
     while (1) {
-        os_eventq_run(&g_ble_ll_data.ll_evq);
+        ev = ble_npl_eventq_get(&g_ble_ll_data.ll_evq, BLE_NPL_TIME_FOREVER);
+        assert(ev);
+        ble_npl_event_run(ev);
     }
 }
 
@@ -1142,9 +1120,9 @@ ble_ll_state_get(void)
  * @param ev Event to add to the Link Layer event queue.
  */
 void
-ble_ll_event_send(struct os_event *ev)
+ble_ll_event_send(struct ble_npl_event *ev)
 {
-    os_eventq_put(&g_ble_ll_data.ll_evq, ev);
+    ble_npl_eventq_put(&g_ble_ll_data.ll_evq, ev);
 }
 
 /**
@@ -1263,11 +1241,6 @@ ble_ll_reset(void)
     /* Reset LL stats */
     STATS_RESET(ble_ll_stats);
 
-#ifdef BLE_LL_LOG
-    g_ble_ll_log_index = 0;
-    memset(&g_ble_ll_log, 0, sizeof(g_ble_ll_log));
-#endif
-
     /* Reset any preferred PHYs */
     g_ble_ll_data.ll_pref_tx_phys = 0;
     g_ble_ll_data.ll_pref_rx_phys = 0;
@@ -1342,7 +1315,7 @@ ble_ll_pdu_tx_time_get(uint16_t payload_len, int phy_mode)
         /* S=2 => 2 * 8 = 16 usecs per byte */
         usecs = payload_len << 4;
     } else {
-        assert(0);
+        BLE_LL_ASSERT(0);
     }
 
     usecs += g_ble_ll_pdu_header_tx_time[phy_mode];
@@ -1360,7 +1333,7 @@ ble_ll_pdu_max_tx_octets_get(uint32_t usecs, int phy_mode)
     uint32_t header_tx_time;
     uint16_t octets;
 
-    assert(phy_mode < BLE_PHY_NUM_MODE);
+    BLE_LL_ASSERT(phy_mode < BLE_PHY_NUM_MODE);
 
     header_tx_time = g_ble_ll_pdu_header_tx_time[phy_mode];
 
@@ -1395,7 +1368,7 @@ ble_ll_pdu_max_tx_octets_get(uint32_t usecs, int phy_mode)
         /* S=2 => 2 * 8 = 16 usecs per byte */
         octets = usecs >> 4;
     } else {
-        assert(0);
+        BLE_LL_ASSERT(0);
     }
 
     /* see comment at the beginning */
@@ -1421,6 +1394,9 @@ ble_ll_init(void)
     /* Ensure this function only gets called by sysinit. */
     SYSINIT_ASSERT_ACTIVE();
 
+    ble_ll_trace_init();
+    ble_phy_trace_init();
+
     /* Retrieve the public device address if not set by syscfg */
     memcpy(&addr.val[0], MYNEWT_VAL_BLE_PUBLIC_DEV_ADDR, BLE_DEV_ADDR_LEN);
     if (!memcmp(&addr.val[0], ((ble_addr_t *)BLE_ADDR_ANY)->val,
@@ -1436,7 +1412,7 @@ ble_ll_init(void)
 #ifdef BLE_XCVR_RFCLK
     /* Settling time of crystal, in ticks */
     xtal_ticks = MYNEWT_VAL(BLE_XTAL_SETTLE_TIME);
-    assert(xtal_ticks != 0);
+    BLE_LL_ASSERT(xtal_ticks != 0);
     g_ble_ll_data.ll_xtal_ticks = os_cputime_usecs_to_ticks(xtal_ticks);
 
     /* Initialize rf clock timer */
@@ -1452,26 +1428,35 @@ ble_ll_init(void)
     lldata->ll_num_acl_pkts = MYNEWT_VAL(BLE_ACL_BUF_COUNT);
     lldata->ll_acl_pkt_size = MYNEWT_VAL(BLE_ACL_BUF_SIZE);
 
+    /*
+     * XXX RIOT ties event queue to a thread which initialized it so we need to
+     * create event queue in LL task, not in general init function. This can
+     * lead to some races between host and LL so for now let us have it as a
+     * hack for RIOT where races can be avoided by proper initialization inside
+     * package.
+     */
+#ifndef RIOT_VERSION
     /* Initialize eventq */
-    os_eventq_init(&lldata->ll_evq);
+    ble_npl_eventq_init(&lldata->ll_evq);
+#endif
 
     /* Initialize the transmit (from host) and receive (from phy) queues */
     STAILQ_INIT(&lldata->ll_tx_pkt_q);
     STAILQ_INIT(&lldata->ll_rx_pkt_q);
 
     /* Initialize transmit (from host) and receive packet (from phy) event */
-    lldata->ll_rx_pkt_ev.ev_cb = ble_ll_event_rx_pkt;
-    lldata->ll_tx_pkt_ev.ev_cb = ble_ll_event_tx_pkt;
+    ble_npl_event_init(&lldata->ll_rx_pkt_ev, ble_ll_event_rx_pkt, NULL);
+    ble_npl_event_init(&lldata->ll_tx_pkt_ev, ble_ll_event_tx_pkt, NULL);
 
     /* Initialize data buffer overflow event and completed packets */
-    lldata->ll_dbuf_overflow_ev.ev_cb = ble_ll_event_dbuf_overflow;
-    lldata->ll_comp_pkt_ev.ev_cb = ble_ll_event_comp_pkts;
+    ble_npl_event_init(&lldata->ll_dbuf_overflow_ev, ble_ll_event_dbuf_overflow, NULL);
+    ble_npl_event_init(&lldata->ll_comp_pkt_ev, ble_ll_event_comp_pkts, NULL);
 
     /* Initialize the HW error timer */
-    os_callout_init(&g_ble_ll_data.ll_hw_err_timer,
-                    &g_ble_ll_data.ll_evq,
-                    ble_ll_hw_err_timer_cb,
-                    NULL);
+    ble_npl_callout_init(&g_ble_ll_data.ll_hw_err_timer,
+                         &g_ble_ll_data.ll_evq,
+                         ble_ll_hw_err_timer_cb,
+                         NULL);
 
     /* Initialize LL HCI */
     ble_ll_hci_init();
@@ -1562,31 +1547,3 @@ ble_ll_init(void)
 
     ble_hci_trans_cfg_ll(ble_ll_hci_cmd_rx, NULL, ble_ll_hci_acl_rx, NULL);
 }
-
-#ifdef BLE_LL_LOG
-void
-ble_ll_log_dump_index(int i)
-{
-    struct ble_ll_log *log;
-
-    log = &g_ble_ll_log[i];
-
-    /* TODO cast is a workaround until this is fixed properly */
-    console_printf("cputime=%lu id=%u a8=%u a16=%u a32=%lu\n",
-                   (unsigned long)log->cputime, log->log_id, log->log_a8,
-                   log->log_a16, (unsigned long)log->log_a32);
-}
-
-void
-ble_ll_log_dump(void)
-{
-    int i;
-
-    for (i = g_ble_ll_log_index; i < BLE_LL_LOG_LEN; ++i) {
-        ble_ll_log_dump_index(i);
-    }
-    for (i = 0; i < g_ble_ll_log_index; ++i) {
-        ble_ll_log_dump_index(i);
-    }
-}
-#endif

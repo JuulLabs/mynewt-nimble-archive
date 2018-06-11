@@ -35,7 +35,7 @@
 #include "ble_ll_conn_priv.h"
 
 #if MYNEWT_VAL(BLE_LL_DIRECT_TEST_MODE) == 1
-#include <ble_ll_dtm_priv.h>
+#include "ble_ll_dtm_priv.h"
 #endif
 
 /* XXX: TODO: create HCI Vendor module\? */
@@ -43,7 +43,8 @@
 #define BLE_HCI_OCF_VENDOR_GET_TX_PWR       2
 #define TXPWR_OPT                           9
 
-static void ble_ll_hci_cmd_proc(struct os_event *ev);
+
+static void ble_ll_hci_cmd_proc(struct ble_npl_event *ev);
 
 /* XXX: TODO: create HCI Vendor module\? */
 static int ble_ll_hci_vendor_cmd_proc(uint8_t *cmdbuf, uint16_t ocf, uint8_t *rsplen);
@@ -52,7 +53,7 @@ static int ble_ll_hci_vendor_get_txpwr(uint8_t *rspbuf, uint8_t *rsplen);
 
 
 /* OS event to enqueue command */
-static struct os_event g_ble_ll_hci_cmd_ev;
+static struct ble_npl_event g_ble_ll_hci_cmd_ev;
 
 /* LE event mask */
 static uint8_t g_ble_ll_hci_le_event_mask[BLE_HCI_SET_LE_EVENT_MASK_LEN];
@@ -93,7 +94,7 @@ ble_ll_hci_event_send(uint8_t *evbuf)
 {
     int rc;
 
-    assert(BLE_HCI_EVENT_HDR_LEN + evbuf[1] <= BLE_LL_MAX_EVT_LEN);
+    BLE_LL_ASSERT(BLE_HCI_EVENT_HDR_LEN + evbuf[1] <= BLE_LL_MAX_EVT_LEN);
 
     /* Count number of events sent */
     STATS_INC(ble_ll_stats, hci_events_sent);
@@ -955,10 +956,10 @@ ble_ll_hci_le_cmd_proc(uint8_t *cmdbuf, uint16_t ocf, uint8_t *rsplen,
         rc = ble_ll_resolv_list_read_size(rspbuf, rsplen);
         break;
     case BLE_HCI_OCF_LE_RD_PEER_RESOLV_ADDR:
-        rc = ble_ll_resolv_peer_addr_rd(cmdbuf);
+        rc = ble_ll_resolv_peer_addr_rd(cmdbuf, rspbuf, rsplen);
         break;
     case BLE_HCI_OCF_LE_RD_LOCAL_RESOLV_ADDR:
-        ble_ll_resolv_local_addr_rd(cmdbuf);
+        rc = ble_ll_resolv_local_addr_rd(cmdbuf, rspbuf, rsplen);
         break;
     case BLE_HCI_OCF_LE_SET_ADDR_RES_EN:
         rc = ble_ll_resolv_enable_cmd(cmdbuf);
@@ -1263,7 +1264,7 @@ ble_ll_hci_status_params_cmd_proc(uint8_t *cmdbuf, uint16_t ocf, uint8_t *rsplen
  * @param ev Pointer to os event containing a pointer to command buffer
  */
 static void
-ble_ll_hci_cmd_proc(struct os_event *ev)
+ble_ll_hci_cmd_proc(struct ble_npl_event *ev)
 {
     int rc;
     uint8_t ogf;
@@ -1274,8 +1275,8 @@ ble_ll_hci_cmd_proc(struct os_event *ev)
     ble_ll_hci_post_cmd_complete_cb post_cb = NULL;
 
     /* The command buffer is the event argument */
-    cmdbuf = (uint8_t *)ev->ev_arg;
-    assert(cmdbuf != NULL);
+    cmdbuf = (uint8_t *)ble_npl_event_get_arg(ev);
+    BLE_LL_ASSERT(cmdbuf != NULL);
 
     /* Get the opcode from the command buffer */
     opcode = get_le16(cmdbuf);
@@ -1311,7 +1312,7 @@ ble_ll_hci_cmd_proc(struct os_event *ev)
     }
 
     /* If no response is generated, we free the buffers */
-    assert(rc >= 0);
+    BLE_LL_ASSERT(rc >= 0);
     if (rc <= BLE_ERR_MAX) {
         /* Create a command complete event with status from command */
         cmdbuf[0] = BLE_HCI_EVCODE_COMMAND_COMPLETE;
@@ -1359,18 +1360,17 @@ ble_ll_hci_cmd_proc(struct os_event *ev)
 int
 ble_ll_hci_cmd_rx(uint8_t *cmd, void *arg)
 {
-    struct os_event *ev;
+    struct ble_npl_event *ev;
 
     /* Get an event structure off the queue */
     ev = &g_ble_ll_hci_cmd_ev;
-    if (ev->ev_queued) {
+    if (ble_npl_event_is_queued(ev)) {
         return BLE_ERR_MEM_CAPACITY;
     }
 
     /* Fill out the event and post to Link Layer */
-    ev->ev_queued = 0;
-    ev->ev_arg = cmd;
-    os_eventq_put(&g_ble_ll_data.ll_evq, ev);
+    ble_npl_event_set_arg(ev, cmd);
+    ble_npl_eventq_put(&g_ble_ll_data.ll_evq, ev);
 
     return 0;
 }
@@ -1393,7 +1393,7 @@ void
 ble_ll_hci_init(void)
 {
     /* Set event callback for command processing */
-    g_ble_ll_hci_cmd_ev.ev_cb = ble_ll_hci_cmd_proc;
+    ble_npl_event_init(&g_ble_ll_hci_cmd_ev, ble_ll_hci_cmd_proc, NULL);
 
     /* Set defaults for LE events: Vol 2 Part E 7.8.1 */
     g_ble_ll_hci_le_event_mask[0] = 0x1f;

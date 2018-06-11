@@ -38,7 +38,7 @@ struct dtm_ctx {
     uint8_t rf_channel;
     uint8_t phy_mode;
     struct os_mbuf *om;
-    struct os_event evt;
+    struct ble_npl_event evt;
     struct ble_ll_sched_item sch;
 };
 
@@ -141,9 +141,9 @@ ble_ll_dtm_set_next(struct dtm_ctx *ctx)
 }
 
 static void
-ble_ll_dtm_event(struct os_event *evt) {
+ble_ll_dtm_event(struct ble_npl_event *evt) {
     /* It is called in LL context */
-    struct dtm_ctx *ctx = evt->ev_arg;
+    struct dtm_ctx *ctx = ble_npl_event_get_arg(evt);
     int rc;
     os_sr_t sr;
 
@@ -156,7 +156,7 @@ ble_ll_dtm_event(struct os_event *evt) {
 
     ble_ll_dtm_set_next(ctx);
     rc = ble_ll_sched_dtm(&ctx->sch);
-    assert(rc == 0);
+    BLE_LL_ASSERT(rc == 0);
 }
 
 static void
@@ -165,11 +165,12 @@ ble_ll_dtm_tx_done(void *arg)
     struct dtm_ctx *ctx;
 
     ctx = arg;
-    if (!ctx->evt.ev_cb) {
+    if (!ctx->active) {
         return;
     }
+
     /* Reschedule event in LL context */
-    os_eventq_put(&g_ble_ll_data.ll_evq, &ctx->evt);
+    ble_npl_eventq_put(&g_ble_ll_data.ll_evq, &ctx->evt);
 
     ble_ll_state_set(BLE_LL_STATE_STANDBY);
 }
@@ -187,7 +188,7 @@ ble_ll_dtm_tx_sched_cb(struct ble_ll_sched_item *sch)
     rc = ble_phy_setchan(channel_rf_to_index[ctx->rf_channel],
                                             BLE_DTM_SYNC_WORD, BLE_DTM_CRC);
     if (rc != 0) {
-        assert(0);
+        BLE_LL_ASSERT(0);
         return BLE_LL_SCHED_STATE_DONE;
     }
 
@@ -201,10 +202,10 @@ ble_ll_dtm_tx_sched_cb(struct ble_ll_sched_item *sch)
 
     /*XXX Maybe reschedule if too late */
     rc = ble_phy_tx_set_start_time(sch->start_time, sch->remainder);
-    assert(rc == 0);
+    BLE_LL_ASSERT(rc == 0);
 
     rc = ble_phy_tx(ble_ll_tx_mbuf_pducb, ctx->om, BLE_PHY_TRANSITION_NONE);
-    assert(rc == 0);
+    BLE_LL_ASSERT(rc == 0);
 
     ble_ll_state_set(BLE_LL_STATE_DTM);
 
@@ -241,7 +242,7 @@ ble_ll_dtm_tx_create_ctx(uint8_t packet_payload, uint8_t len,
 
     /* MSYS is big enough to get continues memory */
     g_ble_ll_dtm_ctx.om = os_msys_get_pkthdr(len, sizeof(struct ble_mbuf_hdr));
-    assert(g_ble_ll_dtm_ctx.om);
+    BLE_LL_ASSERT(g_ble_ll_dtm_ctx.om);
 
     g_ble_ll_dtm_ctx.phy_mode = phy_mode;
     g_ble_ll_dtm_ctx.rf_channel = rf_channel;
@@ -289,14 +290,14 @@ schedule:
                                        os_cputime_usecs_to_ticks(5000);
 
     /* Prepare os_event */
-    g_ble_ll_dtm_ctx.evt.ev_cb = ble_ll_dtm_event;
-    g_ble_ll_dtm_ctx.evt.ev_arg = &g_ble_ll_dtm_ctx;
+    ble_npl_event_init(&g_ble_ll_dtm_ctx.evt, ble_ll_dtm_event,
+                       &g_ble_ll_dtm_ctx);
 
     ble_ll_dtm_calculate_itvl(&g_ble_ll_dtm_ctx, len, phy_mode);
 
     /* Set some start point for TX packets */
     rc = ble_ll_sched_dtm(sch);
-    assert(rc == 0);
+    BLE_LL_ASSERT(rc == 0);
 
     ble_phy_enable_dtm();
 
@@ -344,7 +345,7 @@ ble_ll_dtm_rx_create_ctx(uint8_t rf_channel, uint8_t phy_mode)
     g_ble_ll_dtm_ctx.active = 1;
 
     if (ble_ll_dtm_rx_start() != 0) {
-        assert(0);
+        BLE_LL_ASSERT(0);
         return 1;
     }
 
@@ -488,7 +489,7 @@ ble_ll_dtm_rx_pkt_in(struct os_mbuf *rxpdu, struct ble_mbuf_hdr *hdr)
     }
 
     if (ble_ll_dtm_rx_start() != 0) {
-        assert(0);
+        BLE_LL_ASSERT(0);
     }
 }
 
@@ -516,7 +517,7 @@ void
 ble_ll_dtm_wfr_timer_exp(void)
 {
     /* Should not be needed */
-    assert(0);
+    BLE_LL_ASSERT(0);
 }
 
 

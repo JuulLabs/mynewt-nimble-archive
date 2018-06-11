@@ -61,26 +61,26 @@ static const struct ble_gatt_svc_def ble_svc_ias_defs[] = {
 };
 
 /**
- * Writes the received value from a characteristic write to 
+ * Writes the received value from a characteristic write to
  * the given destination.
  */
 static int
-ble_svc_ias_chr_write(struct os_mbuf *om, uint16_t min_len, 
-                      uint16_t max_len, void *dst, 
+ble_svc_ias_chr_write(struct os_mbuf *om, uint16_t min_len,
+                      uint16_t max_len, void *dst,
                       uint16_t *len)
 {
     uint16_t om_len;
-    int rc; 
+    int rc;
 
     om_len = OS_MBUF_PKTLEN(om);
     if (om_len < min_len || om_len > max_len) {
         return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
-    }   
+    }
 
     rc = ble_hs_mbuf_to_flat(om, dst, max_len, len);
     if (rc != 0) {
         return BLE_ATT_ERR_UNLIKELY;
-    }   
+    }
 
     return 0;
 }
@@ -94,17 +94,19 @@ ble_svc_ias_access(uint16_t conn_handle, uint16_t attr_handle,
                    struct ble_gatt_access_ctxt *ctxt, void *arg)
 {
     int rc;
-    
+
     assert(ctxt->chr == &ble_svc_ias_defs[0].characteristics[0]);
-    
+
     switch (ctxt->op) {
     case BLE_GATT_ACCESS_OP_WRITE_CHR:
         rc = ble_svc_ias_chr_write(ctxt->om,
                                    sizeof ble_svc_ias_alert_level,
                                    sizeof ble_svc_ias_alert_level,
                                    &ble_svc_ias_alert_level, NULL);
-        /* Call the IAS event function */
-        ble_svc_ias_cb_fn(ble_svc_ias_alert_level);
+	/* Call the IAS event function */
+	if (ble_svc_ias_cb_fn) {
+		ble_svc_ias_cb_fn(ble_svc_ias_alert_level);
+	}
         return rc;
 
     default:
@@ -119,7 +121,7 @@ ble_svc_ias_access(uint16_t conn_handle, uint16_t attr_handle,
  * Designates the specified function as the IAS callback.  This callback is
  * necessary for this service to function properly.
  *
- * @param cb                        The callback function to call when 
+ * @param cb                        The callback function to call when
  *                                      the client signals an alert.
  */
 void
@@ -135,7 +137,7 @@ void
 ble_svc_ias_init(void)
 {
     int rc;
-    
+
     /* Ensure this function only gets called by sysinit. */
     SYSINIT_ASSERT_ACTIVE();
 

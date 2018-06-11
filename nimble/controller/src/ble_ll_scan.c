@@ -190,7 +190,7 @@ ble_ll_aux_scan_cb(struct ble_ll_sched_item *sch)
 
     /* When doing RX for AUX pkt, cur_aux_data keeps valid aux data */
     scansm->cur_aux_data = sch->cb_arg;
-    assert(scansm->cur_aux_data != NULL);
+    BLE_LL_ASSERT(scansm->cur_aux_data != NULL);
     scansm->cur_aux_data->scanning = 1;
 
     if (ble_ll_scan_start(scansm, sch)) {
@@ -260,17 +260,17 @@ ble_ll_scan_req_backoff(struct ble_ll_scan_sm *scansm, int success)
 
     scansm->backoff_count = rand() & (scansm->upper_limit - 1);
     ++scansm->backoff_count;
-    assert(scansm->backoff_count <= 256);
+    BLE_LL_ASSERT(scansm->backoff_count <= 256);
 }
 
 #if (MYNEWT_VAL(BLE_LL_CFG_FEAT_LL_PRIVACY) == 1)
 static void
 ble_ll_scan_refresh_nrpa(struct ble_ll_scan_sm *scansm)
 {
-    uint32_t now;
+    ble_npl_time_t now;
 
-    now = os_time_get();
-    if ((int32_t)(now - scansm->scan_nrpa_timer) >= 0) {
+    now = ble_npl_time_get();
+    if ((ble_npl_stime_t)(now - scansm->scan_nrpa_timer) >= 0) {
         /* Generate new NRPA */
         ble_ll_rand_data_get(scansm->scan_nrpa, BLE_DEV_ADDR_LEN);
         scansm->scan_nrpa[5] &= ~0xc0;
@@ -312,7 +312,7 @@ ble_ll_scan_req_pdu_make(struct ble_ll_scan_sm *scansm, uint8_t *adv_addr,
 
     /* Get the advertising PDU */
     m = scansm->scan_req_pdu;
-    assert(m != NULL);
+    BLE_LL_ASSERT(m != NULL);
 
     /* Get pointer to our device address */
     if ((scansm->own_addr_type & 1) == 0) {
@@ -344,7 +344,7 @@ ble_ll_scan_req_pdu_make(struct ble_ll_scan_sm *scansm, uint8_t *adv_addr,
          * section 6.3).
          */
         if (rl) {
-            ble_ll_resolv_gen_priv_addr(rl, 1, rpa);
+            ble_ll_resolv_get_priv_addr(rl, 1, rpa);
             scana = rpa;
         } else {
             ble_ll_scan_refresh_nrpa(scansm);
@@ -646,7 +646,7 @@ ble_ll_hci_send_legacy_ext_adv_report(uint8_t evtype,
         evt->evt_type = BLE_HCI_LEGACY_ADV_EVTYPE_ADV_SCAN_IND;
         break;
     default:
-        assert(0);
+        BLE_LL_ASSERT(0);
         break;
     }
 
@@ -707,7 +707,7 @@ ble_ll_hci_send_adv_report(uint8_t subev, uint8_t evtype,uint8_t event_len,
 
     tmp = &evbuf[12];
     if (subev == BLE_HCI_LE_SUBEV_DIRECT_ADV_RPT) {
-        assert(inita);
+        BLE_LL_ASSERT(inita);
         tmp[0] = BLE_HCI_ADV_OWN_ADDR_RANDOM;
         memcpy(tmp + 1, inita, BLE_DEV_ADDR_LEN);
         tmp += BLE_DEV_ADDR_LEN + 1;
@@ -716,7 +716,7 @@ ble_ll_hci_send_adv_report(uint8_t subev, uint8_t evtype,uint8_t event_len,
         os_mbuf_copydata(adv_data, 0, adv_data_len, tmp + 1);
         tmp += adv_data_len + 1;
     } else {
-        assert(0);
+        BLE_LL_ASSERT(0);
         return -1;
     }
 
@@ -886,7 +886,7 @@ ble_ll_scan_chk_filter_policy(uint8_t pdu_type, uint8_t *adv_addr,
         use_whitelist = 1;
         break;
     default:
-        assert(0);
+        BLE_LL_ASSERT(0);
         break;
     }
 
@@ -961,12 +961,12 @@ ble_ll_scan_start(struct ble_ll_scan_sm *scansm, struct ble_ll_sched_item *sch)
      *      scan just make sanity check that we have proper combination of
      *      sch and resulting scan_chan
      */
-    assert(!sch || scan_chan < BLE_PHY_ADV_CHAN_START);
-    assert(sch || scan_chan >= BLE_PHY_ADV_CHAN_START);
-    
+    BLE_LL_ASSERT(!sch || scan_chan < BLE_PHY_ADV_CHAN_START);
+    BLE_LL_ASSERT(sch || scan_chan >= BLE_PHY_ADV_CHAN_START);
+
     /* Set channel */
     rc = ble_phy_setchan(scan_chan, BLE_ACCESS_ADDR_ADV, BLE_LL_CRCINIT_ADV);
-    assert(rc == 0);
+    BLE_LL_ASSERT(rc == 0);
 
     /*
      * Set transmit end callback to NULL in case we transmit a scan request.
@@ -1054,7 +1054,6 @@ ble_ll_scan_rfclk_chk_stop(void)
         stop = 1;
     }
     if (stop) {
-        ble_ll_log(BLE_LL_LOG_ID_RFCLK_SCAN_DIS, g_ble_ll_data.ll_rfclk_state,0,0);
         ble_ll_xcvr_rfclk_disable();
     }
     OS_EXIT_CRITICAL(sr);
@@ -1200,7 +1199,7 @@ ble_ll_scan_sm_start(struct ble_ll_scan_sm *scansm)
     scansm->scan_enabled = 1;
 
     /* Set first advertising channel */
-    assert(scansm->cur_phy != PHY_NOT_CONFIGURED);
+    BLE_LL_ASSERT(scansm->cur_phy != PHY_NOT_CONFIGURED);
     scansm->phy_data[scansm->cur_phy].scan_chan = BLE_PHY_ADV_CHAN_START;
 
     if (scansm->next_phy != PHY_NOT_CONFIGURED &&
@@ -1308,7 +1307,7 @@ ble_ll_aux_scan_rsp_failed(void)
  * @param arg
  */
 static void
-ble_ll_scan_event_proc(struct os_event *ev)
+ble_ll_scan_event_proc(struct ble_npl_event *ev)
 {
     os_sr_t sr;
     int inside_window;
@@ -1330,7 +1329,7 @@ ble_ll_scan_event_proc(struct os_event *ev)
      * Get the scanning state machine. If not enabled (this is possible), just
      * leave and do nothing (just make sure timer is stopped).
      */
-    scansm = (struct ble_ll_scan_sm *)ev->ev_arg;
+    scansm = (struct ble_ll_scan_sm *)ble_npl_event_get_arg(ev);
     scanphy = &scansm->phy_data[scansm->cur_phy];
 
     OS_ENTER_CRITICAL(sr);
@@ -1414,7 +1413,7 @@ ble_ll_scan_event_proc(struct os_event *ev)
     case BLE_LL_STATE_STANDBY:
         break;
     default:
-        assert(0);
+        BLE_LL_ASSERT(0);
         break;
     }
 
@@ -2070,7 +2069,7 @@ ble_ll_scan_rx_isr_end(struct os_mbuf *rxpdu, uint8_t crcok)
         /* If the ble_ll_scan_get_aux_data() succeed, scansm->cur_aux_data is NULL
          * and aux_data contains correct data
          */
-        assert(scansm->cur_aux_data == NULL);
+        BLE_LL_ASSERT(scansm->cur_aux_data == NULL);
         ble_hdr->rxinfo.user_data = aux_data;
         rc = -1;
     }
@@ -2158,7 +2157,7 @@ ble_ll_scan_rx_isr_end(struct os_mbuf *rxpdu, uint8_t crcok)
         }
 
         /* Better not be a scan response pending */
-        assert(scansm->scan_rsp_pending == 0);
+        BLE_LL_ASSERT(scansm->scan_rsp_pending == 0);
 
         /* We want to send a request. See if backoff allows us */
         --scansm->backoff_count;
@@ -2308,7 +2307,7 @@ ble_ll_hci_send_ext_adv_report(uint8_t ptype, struct os_mbuf *om,
     }
 
     if (!aux_data) {
-        assert(0);
+        BLE_LL_ASSERT(0);
         return;
     }
 
@@ -2365,7 +2364,7 @@ ble_ll_hci_send_ext_adv_report(uint8_t ptype, struct os_mbuf *om,
         evt = next_evt;
     } while (evt);
 
-    assert(offset <= datalen);
+    BLE_LL_ASSERT(offset <= datalen);
 }
 #endif
 /**
@@ -2602,7 +2601,7 @@ ble_ll_scan_set_scan_params(uint8_t *cmd)
     scanp->scan_window = scan_window;
     scanp->scan_filt_policy = filter_policy;
     scanp->own_addr_type = own_addr_type;
-    
+
 #if (BLE_LL_SCAN_PHY_NUMBER == 2)
     g_ble_ll_scan_params[PHY_CODED].configured = 0;
 #endif
@@ -3157,8 +3156,7 @@ ble_ll_scan_common_init(void)
     memset(g_ble_ll_scan_params, 0, sizeof(g_ble_ll_scan_params));
 
     /* Initialize scanning window end event */
-    scansm->scan_sched_ev.ev_cb = ble_ll_scan_event_proc;
-    scansm->scan_sched_ev.ev_arg = scansm;
+    ble_npl_event_init(&scansm->scan_sched_ev, ble_ll_scan_event_proc, scansm);
 
     for (i = 0; i < BLE_LL_SCAN_PHY_NUMBER; i++) {
         /* Set all non-zero default parameters */
@@ -3174,7 +3172,7 @@ ble_ll_scan_common_init(void)
 
 #if (MYNEWT_VAL(BLE_LL_CFG_FEAT_LL_PRIVACY) == 1)
     /* Make sure we'll generate new NRPA if necessary */
-    scansm->scan_nrpa_timer = os_time_get();
+    scansm->scan_nrpa_timer = ble_npl_time_get();
 #endif
 
     /* Initialize scanning timer */
@@ -3191,7 +3189,7 @@ ble_ll_scan_common_init(void)
     /* Get a scan request mbuf (packet header) and attach to state machine */
     scansm->scan_req_pdu = os_msys_get_pkthdr(BLE_SCAN_LEGACY_MAX_PKT_LEN,
                                               sizeof(struct ble_mbuf_hdr));
-    assert(scansm->scan_req_pdu != NULL);
+    BLE_LL_ASSERT(scansm->scan_req_pdu != NULL);
 }
 
 /**
@@ -3254,7 +3252,7 @@ ble_ll_scan_init(void)
                           sizeof (struct ble_ll_aux_data),
                           ext_adv_mem,
                           "ble_ll_aux_scan_pool");
-    assert(err == 0);
+    BLE_LL_ASSERT(err == 0);
 #endif
 
     ble_ll_scan_common_init();

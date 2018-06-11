@@ -6,7 +6,7 @@
  * to you under the Apache License, Version 2.0 (the
  * "License"); you may not use this file except in compliance
  * with the License.  You may obtain a copy of the License at
- * 
+ *
  *  http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing,
@@ -365,8 +365,23 @@ ble_hs_conn_addrs(const struct ble_hs_conn *conn,
     /* Determine our address information. */
     addrs->our_id_addr.type =
         ble_hs_misc_addr_type_to_id(conn->bhc_our_addr_type);
+
+#if MYNEWT_VAL(BLE_EXT_ADV)
+    /* With EA enabled random address for slave connection is per advertising
+     * instance and requires special handling here.
+     */
+
+    if (!(conn->bhc_flags & BLE_HS_CONN_F_MASTER) &&
+            addrs->our_id_addr.type == BLE_ADDR_RANDOM) {
+        our_id_addr_val = conn->bhc_our_rnd_addr;
+    } else {
+        rc = ble_hs_id_addr(addrs->our_id_addr.type, &our_id_addr_val, NULL);
+        assert(rc == 0);
+    }
+#else
     rc = ble_hs_id_addr(addrs->our_id_addr.type, &our_id_addr_val, NULL);
     assert(rc == 0);
+#endif
 
     memcpy(addrs->our_id_addr.val, our_id_addr_val, 6);
 
@@ -406,19 +421,19 @@ ble_hs_conn_timer(void)
     /* If there are no timeouts configured, then there is nothing to check. */
 #if MYNEWT_VAL(BLE_L2CAP_RX_FRAG_TIMEOUT) == 0 && \
     BLE_HS_ATT_SVR_QUEUED_WRITE_TMO == 0
-     
+
     return BLE_HS_FOREVER;
 #endif
 
     struct ble_hs_conn *conn;
-    os_time_t now;
+    ble_npl_time_t now;
     int32_t next_exp_in;
     int32_t time_diff;
     uint16_t conn_handle;
 
     conn_handle = BLE_HS_CONN_HANDLE_NONE;
     next_exp_in = BLE_HS_FOREVER;
-    now = os_time_get();
+    now = ble_npl_time_get();
 
     ble_hs_lock();
 
@@ -493,7 +508,7 @@ ble_hs_conn_timer(void)
     return next_exp_in;
 }
 
-int 
+int
 ble_hs_conn_init(void)
 {
     int rc;

@@ -6,7 +6,7 @@
  * to you under the Apache License, Version 2.0 (the
  * "License"); you may not use this file except in compliance
  * with the License.  You may obtain a copy of the License at
- * 
+ *
  *  http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing,
@@ -330,10 +330,10 @@ ble_att_svr_check_perms(uint16_t conn_handle, int is_read,
  * @param now                   The current OS time.
  *
  * @return                      The number of ticks until the current queued
- *                                  write times out.  
+ *                                  write times out.
  */
 int32_t
-ble_att_svr_ticks_until_tmo(const struct ble_att_svr_conn *svr, os_time_t now)
+ble_att_svr_ticks_until_tmo(const struct ble_att_svr_conn *svr, ble_npl_time_t now)
 {
 #if BLE_HS_ATT_SVR_QUEUED_WRITE_TMO == 0
     return BLE_HS_FOREVER;
@@ -411,7 +411,7 @@ err:
 }
 
 static int
-ble_att_svr_read_flat(uint16_t conn_handle, 
+ble_att_svr_read_flat(uint16_t conn_handle,
                       struct ble_att_svr_entry *entry,
                       uint16_t offset,
                       uint16_t max_len,
@@ -476,22 +476,6 @@ ble_att_svr_read_handle(uint16_t conn_handle, uint16_t attr_handle,
     return 0;
 }
 
-/**
- * Reads a locally registered attribute.  If the specified attribute handle
- * coresponds to a GATT characteristic value or descriptor, the read is
- * performed by calling the registered GATT access callback.
- *
- * @param attr_handle           The 16-bit handle of the attribute to read.
- * @param out_om                On success, this is made to point to a
- *                                  newly-allocated mbuf containing the
- *                                  attribute data read.
- *
- * @return                      0 on success;
- *                              NimBLE host ATT return code if the attribute
- *                                  access callback reports failure;
- *                              NimBLE host core return code on unexpected
- *                                  error.
- */
 int
 ble_att_svr_read_local(uint16_t attr_handle, struct os_mbuf **out_om)
 {
@@ -2092,21 +2076,6 @@ ble_att_svr_rx_write_no_rsp(uint16_t conn_handle, struct os_mbuf **rxom)
     return ble_att_svr_write_handle(conn_handle, handle, 0, rxom, &att_err);
 }
 
-/**
- * Writes a locally registered attribute.  This function consumes the supplied
- * mbuf regardless of the outcome.  If the specified attribute handle
- * coresponds to a GATT characteristic value or descriptor, the write is
- * performed by calling the registered GATT access callback.
- *
- * @param attr_handle           The 16-bit handle of the attribute to write.
- * @param om                    The value to write to the attribute.
- *
- * @return                      0 on success;
- *                              NimBLE host ATT return code if the attribute
- *                                  access callback reports failure;
- *                              NimBLE host core return code on unexpected
- *                                  error.
- */
 int
 ble_att_svr_write_local(uint16_t attr_handle, struct os_mbuf *om)
 {
@@ -2358,7 +2327,7 @@ ble_att_svr_insert_prep_entry(uint16_t conn_handle,
 
 #if BLE_HS_ATT_SVR_QUEUED_WRITE_TMO != 0
     conn->bhc_att_svr.basc_prep_timeout_at =
-        os_time_get() + BLE_HS_ATT_SVR_QUEUED_WRITE_TMO;
+        ble_npl_time_get() + BLE_HS_ATT_SVR_QUEUED_WRITE_TMO;
 
     ble_hs_timer_resched();
 #endif

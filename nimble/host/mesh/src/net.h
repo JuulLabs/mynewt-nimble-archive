@@ -21,6 +21,7 @@
 #define BT_MESH_KEY_REFRESH(flags) (flags & 0x01)
 
 #include <stdbool.h>
+#include "atomic.h"
 #include "mesh/mesh.h"
 #include "mesh/glue.h"
 
@@ -200,7 +201,7 @@ struct bt_mesh_net {
 	s64_t last_update;       /* Time since last IV Update change */
 
 	/* Local network interface */
-	struct os_callout local_work;
+	struct ble_npl_callout local_work;
 	struct net_buf_slist_t local_queue;
 
 #if MYNEWT_VAL(BLE_MESH_FRIEND)

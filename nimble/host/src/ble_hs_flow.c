@@ -1,3 +1,22 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *  http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
 #include "syscfg/syscfg.h"
 #include "nimble/ble_hci_trans.h"
 #include "ble_hs_priv.h"
@@ -5,7 +24,7 @@
 #if MYNEWT_VAL(BLE_HS_FLOW_CTRL)
 
 #define BLE_HS_FLOW_ITVL_TICKS  \
-    (MYNEWT_VAL(BLE_HS_FLOW_CTRL_ITVL) * OS_TICKS_PER_SEC / 1000)
+    ble_npl_time_ms_to_ticks32(MYNEWT_VAL(BLE_HS_FLOW_CTRL_ITVL))
 
 /**
  * The number of freed buffers since the most-recent
@@ -15,19 +34,17 @@
 static uint16_t ble_hs_flow_num_completed_pkts;
 
 /** Periodically sends number-of-completed-packets events.  */
-static struct os_callout ble_hs_flow_timer;
+static struct ble_npl_callout ble_hs_flow_timer;
 
-static os_event_fn ble_hs_flow_event_cb;
+static ble_npl_event_fn ble_hs_flow_event_cb;
 
-static struct os_event ble_hs_flow_ev = {
-    .ev_cb = ble_hs_flow_event_cb,
-};
+static struct ble_npl_event ble_hs_flow_ev;
 
 static int
 ble_hs_flow_tx_num_comp_pkts(void)
 {
     uint8_t buf[
-        BLE_HCI_HOST_NUM_COMP_PKTS_HDR_LEN + 
+        BLE_HCI_HOST_NUM_COMP_PKTS_HDR_LEN +
         BLE_HCI_HOST_NUM_COMP_PKTS_ENT_LEN
     ];
     struct hci_host_num_comp_pkts_entry entry;
@@ -65,7 +82,7 @@ ble_hs_flow_tx_num_comp_pkts(void)
             rc = ble_hs_hci_cmd_send_buf(
                 BLE_HCI_OP(BLE_HCI_OGF_CTLR_BASEBAND,
                            BLE_HCI_OCF_CB_HOST_NUM_COMP_PKTS),
-                buf, off);
+                buf, sizeof(buf));
             if (rc != 0) {
                 return rc;
             }
@@ -76,7 +93,7 @@ ble_hs_flow_tx_num_comp_pkts(void)
 }
 
 static void
-ble_hs_flow_event_cb(struct os_event *ev)
+ble_hs_flow_event_cb(struct ble_npl_event *ev)
 {
     int rc;
 
@@ -116,10 +133,10 @@ ble_hs_flow_inc_completed_pkts(struct ble_hs_conn *conn)
      */
     num_free = MYNEWT_VAL(BLE_ACL_BUF_COUNT) - ble_hs_flow_num_completed_pkts;
     if (num_free <= MYNEWT_VAL(BLE_HS_FLOW_CTRL_THRESH)) {
-        os_eventq_put(ble_hs_evq_get(), &ble_hs_flow_ev);
-        os_callout_stop(&ble_hs_flow_timer);
+        ble_npl_eventq_put(ble_hs_evq_get(), &ble_hs_flow_ev);
+        ble_npl_callout_stop(&ble_hs_flow_timer);
     } else if (ble_hs_flow_num_completed_pkts == 1) {
-        rc = os_callout_reset(&ble_hs_flow_timer, BLE_HS_FLOW_ITVL_TICKS);
+        rc = ble_npl_callout_reset(&ble_hs_flow_timer, BLE_HS_FLOW_ITVL_TICKS);
         BLE_HS_DBG_ASSERT_EVAL(rc == 0);
     }
 }
@@ -153,7 +170,7 @@ ble_hs_flow_acl_free(struct os_mempool_ext *mpe, void *data, void *arg)
      * freed.
      */
     ble_hs_lock_nested();
-    
+
     conn = ble_hs_conn_find(conn_handle);
     if (conn != NULL) {
         ble_hs_flow_inc_completed_pkts(conn);
@@ -171,7 +188,7 @@ ble_hs_flow_connection_broken(uint16_t conn_handle)
 #if MYNEWT_VAL(BLE_HS_FLOW_CTRL) &&                 \
     MYNEWT_VAL(BLE_HS_FLOW_CTRL_TX_ON_DISCONNECT)
     ble_hs_lock();
-    ble_hs_flow_tx_num_comp_pkts(); 
+    ble_hs_flow_tx_num_comp_pkts();
     ble_hs_unlock();
 #endif
 }
@@ -210,9 +227,11 @@ ble_hs_flow_startup(void)
     struct hci_host_buf_size buf_size_cmd;
     int rc;
 
+    ble_npl_event_init(&ble_hs_flow_ev, ble_hs_flow_event_cb, NULL);
+
     /* Assume failure. */
     ble_hci_trans_set_acl_free_cb(NULL, NULL);
-    os_callout_stop(&ble_hs_flow_timer);
+    ble_npl_callout_stop(&ble_hs_flow_timer);
 
     rc = ble_hs_hci_cmd_tx_set_ctlr_to_host_fc(BLE_HCI_CTLR_TO_HOST_FC_ACL);
     if (rc != 0) {
@@ -232,8 +251,8 @@ ble_hs_flow_startup(void)
     /* Flow control successfully enabled. */
     ble_hs_flow_num_completed_pkts = 0;
     ble_hci_trans_set_acl_free_cb(ble_hs_flow_acl_free, NULL);
-    os_callout_init(&ble_hs_flow_timer, ble_hs_evq_get(),
-                    ble_hs_flow_event_cb, NULL);
+    ble_npl_callout_init(&ble_hs_flow_timer, ble_hs_evq_get(),
+                         ble_hs_flow_event_cb, NULL);
 #endif
 
     return 0;

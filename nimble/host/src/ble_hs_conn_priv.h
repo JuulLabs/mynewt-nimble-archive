@@ -6,7 +6,7 @@
  * to you under the Apache License, Version 2.0 (the
  * "License"); you may not use this file except in compliance
  * with the License.  You may obtain a copy of the License at
- * 
+ *
  *  http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing,
@@ -42,6 +42,9 @@ struct ble_hs_conn {
     SLIST_ENTRY(ble_hs_conn) bhc_next;
     uint16_t bhc_handle;
     uint8_t bhc_our_addr_type;
+#if MYNEWT_VAL(BLE_EXT_ADV)
+    uint8_t bhc_our_rnd_addr[6];
+#endif
     ble_addr_t bhc_peer_addr;
     ble_addr_t bhc_our_rpa_addr;
     ble_addr_t bhc_peer_rpa_addr;
@@ -57,7 +60,7 @@ struct ble_hs_conn {
 
     struct ble_l2cap_chan_list bhc_channels;
     struct ble_l2cap_chan *bhc_rx_chan; /* Channel rxing current packet. */
-    uint32_t bhc_rx_timeout;
+    ble_npl_time_t bhc_rx_timeout;
 
     /**
      * Count of packets sent over this connection that the controller has not

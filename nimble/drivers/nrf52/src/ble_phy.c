@@ -23,13 +23,19 @@
 #include "syscfg/syscfg.h"
 #include "os/os.h"
 #include "ble/xcvr.h"
-#include "mcu/cmsis_nvic.h"
-#include "hal/hal_gpio.h"
 #include "nimble/ble.h"
 #include "nimble/nimble_opt.h"
+#include "nimble/nimble_npl.h"
 #include "controller/ble_phy.h"
+#include "controller/ble_phy_trace.h"
 #include "controller/ble_ll.h"
-#include "nrf.h"
+#include "nrfx.h"
+#if MYNEWT
+#include "mcu/cmsis_nvic.h"
+#include "hal/hal_gpio.h"
+#else
+#include "core_cm4.h"
+#endif
 
 /*
  * NOTE: This code uses a couple of PPI channels so care should be taken when
@@ -667,6 +673,24 @@ ble_phy_wfr_enable(int txrx, uint8_t tx_phy_mode, uint32_t wfr_usecs)
 
     /* Enable the disabled interrupt so we time out on events compare */
     NRF_RADIO->INTENSET = RADIO_INTENSET_DISABLED_Msk;
+
+    /*
+     * It may happen that if CPU is halted for a brief moment (e.g. during flash
+     * erase or write), TIMER0 already counted past CC[3] and thus wfr will not
+     * fire as expected. In case this happened, let's just disable PPIs for wfr
+     * and trigger wfr manually (i.e. disable radio).
+     *
+     * Note that the same applies to RX start time set in CC[0] but since it
+     * should fire earlier than wfr, fixing wfr is enough.
+     *
+     * CC[1] is only used as a reference on RX start, we do not need it here so
+     * it can be used to read TIMER0 counter.
+     */
+    NRF_TIMER0->TASKS_CAPTURE[1] = 1;
+    if (NRF_TIMER0->CC[1] > NRF_TIMER0->CC[3]) {
+        NRF_PPI->CHENCLR = PPI_CHEN_CH4_Msk | PPI_CHEN_CH5_Msk;
+        NRF_RADIO->TASKS_DISABLE = 1;
+    }
 }
 
 #if MYNEWT_VAL(BLE_LL_CFG_FEAT_LE_ENCRYPTION)
@@ -801,14 +825,10 @@ ble_phy_tx_end_isr(void)
 
     /* If this transmission was encrypted we need to remember it */
     was_encrypted = g_ble_phy_data.phy_encrypted;
+    (void)was_encrypted;
 
     /* Better be in TX state! */
     assert(g_ble_phy_data.phy_state == BLE_PHY_STATE_TX);
-
-    /* Log the event */
-    ble_ll_log(BLE_LL_LOG_ID_PHY_TXEND, g_ble_phy_data.phy_tx_pyld_len,
-               was_encrypted, NRF_TIMER0->CC[2]);
-    (void)was_encrypted;
 
     /* Clear events and clear interrupt on disabled event */
     NRF_RADIO->EVENTS_DISABLED = 0;
@@ -1155,6 +1175,8 @@ ble_phy_isr(void)
 {
     uint32_t irq_en;
 
+    os_trace_isr_enter();
+
     /* Read irq register to determine which interrupts are enabled */
     irq_en = NRF_RADIO->INTENCLR;
 
@@ -1205,6 +1227,8 @@ ble_phy_isr(void)
 
     /* Count # of interrupts */
     STATS_INC(ble_phy_stats, phy_isrs);
+
+    os_trace_isr_exit();
 }
 
 #if MYNEWT_VAL(BLE_PHY_DBG_TIME_TXRXEN_READY_PIN) >= 0 || \
@@ -1230,7 +1254,7 @@ ble_phy_dbg_time_setup_gpiote(int index, int pin)
                         (GPIOTE_CONFIG_MODE_Task << GPIOTE_CONFIG_MODE_Pos) |
                         ((pin & 0x1F) << GPIOTE_CONFIG_PSEL_Pos) |
 #if NRF52840_XXAA
-                        ((pin > 31) << GPIOTE_CONFIG_PORT_Pos);
+                        ((port == NRF_P1) << GPIOTE_CONFIG_PORT_Pos);
 #else
                         0;
 #endif
@@ -1401,7 +1425,11 @@ ble_phy_init(void)
 
     /* Set isr in vector table and enable interrupt */
     NVIC_SetPriority(RADIO_IRQn, 0);
+#if MYNEWT
     NVIC_SetVector(RADIO_IRQn, (uint32_t)ble_phy_isr);
+#else
+    ble_npl_hw_set_isr(RADIO_IRQn, (uint32_t)ble_phy_isr);
+#endif
     NVIC_EnableIRQ(RADIO_IRQn);
 
     /* Register phy statistics */
@@ -1459,8 +1487,6 @@ ble_phy_rx(void)
 
     /* PPI to start radio automatically shall be set here */
     assert(NRF_PPI->CHEN & PPI_CHEN_CH21_Msk);
-
-    ble_ll_log(BLE_LL_LOG_ID_PHY_RX, g_ble_phy_data.phy_encrypted, 0, 0);
 
     return 0;
 }
@@ -1539,6 +1565,8 @@ ble_phy_tx_set_start_time(uint32_t cputime, uint8_t rem_usecs)
 {
     int rc;
 
+    ble_phy_trace_u32x2(BLE_PHY_TRACE_ID_START_TX, cputime, rem_usecs);
+
     /* XXX: This should not be necessary, but paranoia is good! */
     /* Clear timer0 compare to RXEN since we are transmitting */
     NRF_PPI->CHENCLR = PPI_CHEN_CH21_Msk;
@@ -1573,6 +1601,8 @@ ble_phy_rx_set_start_time(uint32_t cputime, uint8_t rem_usecs)
 {
     bool late = false;
     int rc = 0;
+
+    ble_phy_trace_u32x2(BLE_PHY_TRACE_ID_START_RX, cputime, rem_usecs);
 
     /* XXX: This should not be necessary, but paranoia is good! */
     /* Clear timer0 compare to TXEN since we are transmitting */
@@ -1835,8 +1865,6 @@ ble_phy_setchan(uint8_t chan, uint32_t access_addr, uint32_t crcinit)
     NRF_RADIO->FREQUENCY = g_ble_phy_chan_freq[chan];
     NRF_RADIO->DATAWHITEIV = chan;
 
-    ble_ll_log(BLE_LL_LOG_ID_PHY_SETCHAN, chan, freq, access_addr);
-
     return 0;
 }
 
@@ -1894,7 +1922,8 @@ ble_phy_restart_rx(void)
 void
 ble_phy_disable(void)
 {
-    ble_ll_log(BLE_LL_LOG_ID_PHY_DISABLE, g_ble_phy_data.phy_state, 0, 0);
+    ble_phy_trace_void(BLE_PHY_TRACE_ID_DISABLE);
+
     ble_phy_stop_usec_timer();
     ble_phy_disable_irq_and_ppi();
 }

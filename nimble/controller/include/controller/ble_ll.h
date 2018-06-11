@@ -21,11 +21,15 @@
 #define H_BLE_LL_
 
 #include "stats/stats.h"
-#include "os/os_eventq.h"
-#include "os/os_callout.h"
 #include "os/os_cputime.h"
 #include "nimble/nimble_opt.h"
+#include "nimble/nimble_npl.h"
 #include "controller/ble_phy.h"
+
+#ifdef MYNEWT
+#include "controller/ble_ll_ctrl.h"
+#include "hal/hal_system.h"
+#endif
 
 #ifdef __cplusplus
 extern "C" {
@@ -35,6 +39,23 @@ extern "C" {
 #error 32.768kHz clock required
 #endif
 
+#ifdef MYNEWT
+#ifdef NDEBUG
+#define BLE_LL_ASSERT(cond) (void(0))
+#else
+#define BLE_LL_ASSERT(cond) \
+    if (!(cond)) { \
+        if (hal_debugger_connected()) { \
+            assert(0);\
+        } else {\
+            ble_ll_hci_ev_send_vendor_err(__FILE__, __LINE__); \
+            while(1) {}\
+        }\
+    }
+#endif
+#else
+#define BLE_LL_ASSERT(cond) assert(cond)
+#endif
 /*
  * XXX:
  * I guess this should not depend on the 32768 crystal to be honest. This
@@ -103,27 +124,27 @@ struct ble_ll_obj
 #endif
 
     /* Task event queue */
-    struct os_eventq ll_evq;
+    struct ble_npl_eventq ll_evq;
 
     /* Wait for response timer */
     struct hal_timer ll_wfr_timer;
 
     /* Packet receive queue (and event). Holds received packets from PHY */
-    struct os_event ll_rx_pkt_ev;
+    struct ble_npl_event ll_rx_pkt_ev;
     struct ble_ll_pkt_q ll_rx_pkt_q;
 
     /* Packet transmit queue */
-    struct os_event ll_tx_pkt_ev;
+    struct ble_npl_event ll_tx_pkt_ev;
     struct ble_ll_pkt_q ll_tx_pkt_q;
 
     /* Data buffer overflow event */
-    struct os_event ll_dbuf_overflow_ev;
+    struct ble_npl_event ll_dbuf_overflow_ev;
 
     /* Number of completed packets event */
-    struct os_event ll_comp_pkt_ev;
+    struct ble_npl_event ll_comp_pkt_ev;
 
     /* HW error callout */
-    struct os_callout ll_hw_err_timer;
+    struct ble_npl_callout ll_hw_err_timer;
 };
 extern struct ble_ll_obj g_ble_ll_data;
 
@@ -441,7 +462,7 @@ void ble_ll_state_set(uint8_t ll_state);
 uint8_t ble_ll_state_get(void);
 
 /* Send an event to LL task */
-void ble_ll_event_send(struct os_event *ev);
+void ble_ll_event_send(struct ble_npl_event *ev);
 
 /* Hand received pdu's to LL task  */
 void ble_ll_rx_pdu_in(struct os_mbuf *rxpdu);
@@ -490,37 +511,6 @@ ble_ll_usecs_to_ticks_round_up(uint32_t usecs)
 {
     return os_cputime_usecs_to_ticks(usecs + 30);
 }
-
-#define BLE_LL_LOG_ID_PHY_SETCHAN       (1)
-#define BLE_LL_LOG_ID_RX_START          (2)
-#define BLE_LL_LOG_ID_RX_END            (3)
-#define BLE_LL_LOG_ID_WFR_EXP           (4)
-#define BLE_LL_LOG_ID_PHY_TXEND         (5)
-#define BLE_LL_LOG_ID_PHY_TX            (6)
-#define BLE_LL_LOG_ID_PHY_RX            (7)
-#define BLE_LL_LOG_ID_PHY_DISABLE       (9)
-#define BLE_LL_LOG_ID_CONN_EV_START     (10)
-#define BLE_LL_LOG_ID_CONN_TX           (15)
-#define BLE_LL_LOG_ID_CONN_RX           (16)
-#define BLE_LL_LOG_ID_CONN_TX_RETRY     (17)
-#define BLE_LL_LOG_ID_CONN_RX_ACK       (18)
-#define BLE_LL_LOG_ID_LL_CTRL_RX        (19)
-#define BLE_LL_LOG_ID_CONN_EV_END       (20)
-#define BLE_LL_LOG_ID_CONN_END          (30)
-#define BLE_LL_LOG_ID_ADV_TXBEG         (50)
-#define BLE_LL_LOG_ID_ADV_TXDONE        (60)
-#define BLE_LL_LOG_ID_SCHED             (80)
-#define BLE_LL_LOG_ID_RFCLK_START       (90)
-#define BLE_LL_LOG_ID_RFCLK_ENABLE      (91)
-#define BLE_LL_LOG_ID_RFCLK_STOP        (95)
-#define BLE_LL_LOG_ID_RFCLK_SCHED_DIS   (96)
-#define BLE_LL_LOG_ID_RFCLK_SCAN_DIS    (97)
-
-#ifdef BLE_LL_LOG
-void ble_ll_log(uint8_t id, uint8_t arg8, uint16_t arg16, uint32_t arg32);
-#else
-#define ble_ll_log(m,n,o,p)
-#endif
 
 #if (MYNEWT_VAL(BLE_LL_CFG_FEAT_LE_ENCRYPTION) == 1)
 /* LTK 0x4C68384139F574D836BCF34E9DFB01BF */
