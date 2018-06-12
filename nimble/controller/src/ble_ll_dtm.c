@@ -27,7 +27,7 @@
 #include "controller/ble_phy.h"
 #include "controller/ble_ll_sched.h"
 #include "controller/ble_ll_xcvr.h"
-#include "ble_ll_dtm_priv.h"
+#include "controller/ble_ll_dtm.h"
 
 struct dtm_ctx {
     uint8_t payload_packet;
@@ -468,7 +468,7 @@ int ble_ll_dtm_rx_test(uint8_t *cmdbuf, bool enhanced)
 
 int ble_ll_dtm_end_test(uint8_t *cmdbuf, uint8_t *rsp, uint8_t *rsplen)
 {
-    put_le16(rsp, g_ble_ll_dtm_ctx. num_of_packets);
+    put_le16(rsp, g_ble_ll_dtm_ctx.num_of_packets);
     *rsplen = 2;
 
     ble_ll_dtm_ctx_free(&g_ble_ll_dtm_ctx);
