@@ -121,6 +121,8 @@ int ble_hs_id_copy_addr(uint8_t id_addr_type, uint8_t *out_id_addr,
  */
 int ble_hs_id_infer_auto(int privacy, uint8_t *out_addr_type);
 
+void ble_hs_id_reset(void);
+
 #ifdef __cplusplus
 }
 #endif

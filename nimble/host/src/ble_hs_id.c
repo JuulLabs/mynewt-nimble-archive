@@ -272,3 +272,10 @@ done:
     ble_hs_unlock();
     return rc;
 }
+
+void
+ble_hs_id_reset(void)
+{
+    memset(ble_hs_id_pub, 0, sizeof ble_hs_id_pub);
+    memset(ble_hs_id_rnd, 0, sizeof ble_hs_id_pub);
+}

@@ -381,6 +381,8 @@ ble_hs_reset(void)
     }
     ble_hs_reset_reason = 0;
 
+    ble_hs_id_reset();
+
     rc = ble_hs_sync();
     return rc;
 }
