@@ -23,6 +23,7 @@
 #include <stdint.h>
 #include <string.h>
 #include "os/os.h"
+#include "console/console.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -112,7 +113,14 @@ ble_npl_eventq_remove(struct ble_npl_eventq *evq,
 static inline void
 ble_npl_event_run(struct ble_npl_event *ev)
 {
-    ev->ev.ev_cb(&ev->ev);
+    if(ev->ev.ev_cb == NULL)
+    {
+        console_printf("retry\n\n\n");
+    }
+    else
+    {
+        ev->ev.ev_cb(&ev->ev);
+    }
 }
 
 static inline bool
