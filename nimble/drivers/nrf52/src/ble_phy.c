@@ -1769,6 +1769,7 @@ ble_phy_tx(ble_phy_tx_pducb_t pducb, void *pducb_arg, uint8_t end_trans)
 int
 ble_phy_txpwr_set(int dbm)
 {
+    set_adv_power(dbm);
     /* "Rail" power level if outside supported range */
     dbm = ble_phy_txpower_round(dbm);
 

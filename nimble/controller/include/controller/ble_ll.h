@@ -35,6 +35,12 @@
 extern "C" {
 #endif
 
+typedef struct {
+    int adv_pow;
+}ble_adv_power_debug_t;
+
+extern ble_adv_power_debug_t ble_adv_power_debug;
+
 #if MYNEWT_VAL(OS_CPUTIME_FREQ) != 32768
 #error 32.768kHz clock required
 #endif
@@ -551,6 +557,8 @@ extern uint32_t g_bletest_IVs;
 #if MYNEWT_VAL(BLE_LL_DIRECT_TEST_MODE)
 void ble_ll_dtm_init();
 #endif
+
+void set_adv_power(int pow);
 
 #ifdef __cplusplus
 }

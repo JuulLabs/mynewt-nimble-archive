@@ -48,6 +48,9 @@
 #include "ble_ll_dtm_priv.h"
 #endif
 
+ble_adv_power_debug_t ble_adv_power_debug = {
+        .adv_pow = 0,
+};
 /* XXX:
  *
  * 1) use the sanity task!
@@ -1102,7 +1105,7 @@ ble_ll_task(void *arg)
     ble_phy_init();
 
     /* Set output power to 1mW (0 dBm) */
-    ble_phy_txpwr_set(MYNEWT_VAL(BLE_LL_TX_PWR_DBM));
+    ble_phy_txpwr_set(ble_adv_power_debug.adv_pow);
 
     /* Tell the host that we are ready to receive packets */
     ble_ll_hci_send_noop();
@@ -1584,4 +1587,9 @@ ble_ll_init(void)
 #if MYNEWT_VAL(BLE_LL_DIRECT_TEST_MODE)
     ble_ll_dtm_init();
 #endif
+}
+
+void set_adv_power(int pow)
+{
+    ble_adv_power_debug.adv_pow = pow;
 }

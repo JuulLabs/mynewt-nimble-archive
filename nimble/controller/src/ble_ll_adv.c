@@ -831,7 +831,7 @@ ble_ll_adv_tx_done(void *arg)
     struct ble_ll_adv_sm *advsm;
 
     /* XXX: for now, reset power to max after advertising */
-    ble_phy_txpwr_set(MYNEWT_VAL(BLE_LL_TX_PWR_DBM));
+    ble_phy_txpwr_set(ble_adv_power_debug.adv_pow);
 
     advsm = (struct ble_ll_adv_sm *)arg;
 
@@ -1460,7 +1460,7 @@ ble_ll_adv_halt(void)
 
         ble_ll_trace_u32(BLE_LL_TRACE_ID_ADV_HALT, advsm->adv_instance);
 
-        ble_phy_txpwr_set(MYNEWT_VAL(BLE_LL_TX_PWR_DBM));
+        ble_phy_txpwr_set(ble_adv_power_debug.adv_pow);
 
         ble_npl_eventq_put(&g_ble_ll_data.ll_evq, &advsm->adv_txdone_ev);
 #if MYNEWT_VAL(BLE_LL_CFG_FEAT_LL_EXT_ADV)
@@ -1568,7 +1568,7 @@ ble_ll_adv_set_adv_params(uint8_t *cmd)
         return BLE_ERR_INV_HCI_CMD_PARMS;
     }
 
-    advsm->adv_txpwr = MYNEWT_VAL(BLE_LL_TX_PWR_DBM);
+    advsm->adv_txpwr = ble_adv_power_debug.adv_pow;
 
 #if (MYNEWT_VAL(BLE_LL_CFG_FEAT_LL_PRIVACY) == 1)
     if (own_addr_type > BLE_HCI_ADV_OWN_ADDR_RANDOM) {
@@ -1948,7 +1948,7 @@ ble_ll_adv_sm_start(struct ble_ll_adv_sm *advsm)
 int
 ble_ll_adv_read_txpwr(uint8_t *rspbuf, uint8_t *rsplen)
 {
-    rspbuf[0] = MYNEWT_VAL(BLE_LL_TX_PWR_DBM);
+    rspbuf[0] = ble_adv_power_debug.adv_pow;
     *rsplen = 1;
     return BLE_ERR_SUCCESS;
 }
@@ -2536,7 +2536,7 @@ ble_ll_adv_ext_set_param(uint8_t *cmdbuf, uint8_t *rspbuf, uint8_t *rsplen)
     tx_power = (int8_t) cmdbuf[19];
     if (tx_power == 127) {
         /* no preference */
-        advsm->adv_txpwr = MYNEWT_VAL(BLE_LL_TX_PWR_DBM);
+        advsm->adv_txpwr = ble_adv_power_debug.adv_pow;
     } else {
         advsm->adv_txpwr = ble_phy_txpower_round(tx_power);
     }
