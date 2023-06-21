@@ -19,6 +19,9 @@
 #
 -->
 
+## THIS REPO HAS BEEN ARCHIVED DUE TO NON-USE.  
+Sam Anderson, 6/21/2023  
+
 <img src="http://mynewt.apache.org/img/logo.svg" width="250" alt="Apache Mynewt">
 
 ## Overview
